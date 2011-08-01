@@ -1,0 +1,11 @@
+#!/bin/sh
+
+#DEBHELPER#
+
+# always begin new logfile on update
+LOGROTATE="/etc/logrotate.d/atop"
+
+if [ -f $LOGROTATE ]; then
+	/usr/sbin/logrotate -f $LOGROTATE
+fi
+

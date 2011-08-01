@@ -496,13 +496,12 @@ should finish anyhow before midnight.
 A raw file can be read and visualized again with the flag
 .B -r
 followed by the filename. If no filename is specified, the file
-.BI /var/log/atop/atop_ YYYYMMDD
-is opened for input (where
-.I YYYYMMDD
-are digits representing the current date).
-If a filename is specified in the format YYYYMMDD (representing any valid
-date), the file
-.BI /var/log/atop/atop_ YYYYMMDD
+.BI /var/log/atop.log
+is opened for input.
+If a filename is specified in the format yyyymmdd (where
+.I yyyymmdd
+are digits representing any valid date), the file
+.BI /var/log/atop/atop_ yyyymmdd
 is opened.
 .br
 The samples from the file can be viewed interactively by using the key 't'
@@ -518,44 +517,11 @@ With the flag
 (end time) followed by a time argument of the form HH:MM,
 a certain time period within the raw file can be selected.
 .PP
-When
-.B atop
-is installed, the script
-.B atop.daily
-is stored in the
-.I /etc/atop
-directory.
-This scripts takes care that
-.B atop
-is activated every day at midnight to write compressed binary data to the file
-.BI /var/log/atop/atop_ YYYYMMDD
-with an interval of 10 minutes.
-.br
-Furthermore the script removes all raw files which are older than four weeks.
-.br
-The script is activated via the
-.B cron
-daemon using the file
-.I /etc/cron.d/atop
-with the contents
-.br
-.B \ \ \ \ \ \ \ \ 0 0 * * * root /etc/atop/atop.daily
-.PP
-When the RPM `psacct' is installed, the process accounting is
-automatically restarted via the
-.B logrotate
-mechanism. The file
-.B /etc/logrotate.d/psaccs_atop
-takes care that
-.B atop
-is finished just before the rotation of the process accounting file
-and the file
-.B /etc/logrotate.d/psaccu_atop
-takes care that
-.B atop
-is restarted again after the rotation.
-When the RPM `psacct' is not installed, these logrotate-files
-have no effect.
+The Debian package automatically starts up
+.I atop
+via init, rotation of the logfiles is done with logrotate. Therefore, the
+suggested layout with cron scripts in /etc/atop as described in the upstream
+package is not necessary for Debian.
 .SH OUTPUT DESCRIPTION
 The first sample shows the system level activity since boot
 (the elapsed time in the header shows the number of seconds since boot).
@@ -1515,13 +1481,11 @@ is not used.
 Configuration file containing personal default values.
 .PP
 .TP 5
-.BI /var/log/atop/atop_ YYYYMMDD
+.BI /var/log/atop.log[.X]
 Raw file, where
-.I YYYYMMDD
-are digits representing the current date.
-This name is used by the script
-.B atop.daily
-as default name for the output file, and by
+.I X
+is the age in days as added by logrotate(1).
+This name is used by
 .B atop
 as default name for the input file when using the
 .B -r
@@ -1534,5 +1498,7 @@ in compressed format.
 .B logrotate(8)
 .br
 .B http://www.ATComputing.nl/Tools/atop
-.SH AUTHOR
-Gerlof Langeveld, AT Computing (gerlof@ATComputing.nl)
+.SH "AUTHOR"
+Gerlof Langeveld, AT Computing (gerlof@ATComputing.nl),
+Debian package by Edelhard Becker.
+

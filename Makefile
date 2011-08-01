@@ -28,7 +28,7 @@ atop:		atop.o    $(ALLMODS) Makefile
 		cc atop.o $(ALLMODS) -o atop $(LDFLAGS)
 
 clean:
-		rm -f *.o
+		rm -f *.o atop
 
 install:	atop
 		if [ ! -d $(DESTDIR)$(LOGPATH) ]; then mkdir -p $(DESTDIR)$(LOGPATH); fi

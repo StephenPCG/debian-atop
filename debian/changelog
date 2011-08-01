@@ -1,0 +1,176 @@
+atop (1.23-1.1) unstable; urgency=high
+
+  * Non-maintainer upload.
+  * Fix CVE-2011-XXXX: Insecure use of a temporary files rawlog.c and
+    acctproc.c (Closes: #622794)
+
+ -- Jonathan Wiltshire <jmw@debian.org>  Mon, 01 Aug 2011 15:35:16 +0100
+
+atop (1.23-1) unstable; urgency=low
+
+  * fixed typo (Closes: #467447)
+  * last release was built as native package
+
+ -- Edelhard Becker <edelhard@debian.org>  Fri, 07 Mar 2008 22:07:27 +0100
+
+atop (1.23) unstable; urgency=low
+
+  * new upstream release
+  * bump standards to 3.7.3 (no changes)
+  * moved homepage from description to control field
+
+ -- Edelhard Becker <edelhard@debian.org>  Fri, 07 Mar 2008 16:16:15 +0100
+
+atop (1.22) unstable; urgency=low
+
+  * new upstream release
+
+ -- Edelhard Becker <edelhard@debian.org>  Tue, 20 Nov 2007 17:44:47 +0100
+
+atop (1.21-1) unstable; urgency=low
+
+  * new upstream release
+  * made rules and init.d script lintian clean
+
+ -- Edelhard Becker <edelhard@debian.org>  Fri, 31 Aug 2007 15:55:33 +0200
+
+atop (1.20-2) unstable; urgency=low
+
+  * do not install upstream's crontab file
+
+ -- Edelhard Becker <edelhard@debian.org>  Thu, 03 May 2007 00:12:59 +0200
+
+atop (1.20-1) unstable; urgency=low
+
+  * New upstream release (Closes: #411133, #372935)
+  * include upstream Changelog (Closes: #340093)
+  * bumped standards to 3.7.2
+  * applied patch to cooperate with sa from acct package, thanks Dominique
+    (Closes: #420676)
+  * restart daemon by logrotate via invoke-rc.d (Closes: #393545)
+
+ -- Edelhard Becker <edelhard@debian.org>  Wed, 02 May 2007 02:30:09 +0200
+
+atop (1.16-2) unstable; urgency=low
+
+  * depend on logrotate (Closes: #362893), thanks Tommi
+
+ -- Edelhard Becker <edelhard@debian.org>  Mon, 17 Apr 2006 15:00:20 +0200
+
+atop (1.16-1) unstable; urgency=low
+
+  * New upstream release. Most notable upstream changes:
+
+     - New line with system-level counters called PAG (paging-related counters
+       like scan, stall, swin and swout).                   
+     - For network-interfaces the effective line-speed in bits-per-second for
+       incoming and outgoing traffic is shown now (so Kbps/Mbps/Gbps).       
+     - New function '1': show averages *per second* where applicable.
+     - Improved output that is easier to parse (fixed number of fields per
+       line).     
+
+ -- Edelhard Becker <edelhard@debian.org>  Fri,  7 Apr 2006 11:59:46 +0200
+
+atop (1.15-2) unstable; urgency=low
+
+  * remove log files on purge (Closes: #359083), thanks Justin
+
+ -- Edelhard Becker <edelhard@debian.org>  Tue, 28 Mar 2006 16:29:27 +0200
+
+atop (1.15-1) unstable; urgency=low
+
+  * New upstream release
+
+ -- Edelhard Becker <edelhard@debian.org>  Mon,  7 Nov 2005 23:08:01 +0100
+
+atop (1.14.99-1) unstable; urgency=low
+
+  * New upstream release (upcoming 1.15 preview)
+  * removed /etc/atop/ stuff (not necessary) and the corresponding section
+    from the man page
+  * removed /etc/rc.d/ stuff (not necessary)
+
+ -- Edelhard Becker <edelhard@debian.org>  Sun, 30 Oct 2005 11:56:20 +0100
+
+atop (1.14-1) unstable; urgency=low
+
+  * New upstream release
+  * added URL of the new website where appropriate (copyright, control, README
+    and watch)
+
+ -- Edelhard Becker <edelhard@debian.org>  Sat, 18 Dec 2004 14:01:42 +0100
+
+atop (1.13-1) unstable; urgency=low
+
+  * New upstream release (added recognition of thread-groups and scheduling
+    information)
+  * fixed missing options in manpage and help-screen
+
+ -- Edelhard Becker <edelhard@debian.org>  Fri, 24 Sep 2004 11:09:04 +0200
+
+atop (1.12-1) unstable; urgency=low
+
+  * New upstream release
+
+ -- Edelhard Becker <edelhard@debian.org>  Wed,  2 Jun 2004 10:44:36 +0200
+
+atop (1.10-2) unstable; urgency=low
+
+  * changed default for raw data filename to /var/log/atop.1 to reflect the
+    Debian layout (Closes: #217387); adapted man page
+  * bumped policy to 3.6.1 (no changes needed)
+
+ -- Edelhard Becker <edelhard@debian.org>  Fri, 24 Oct 2003 14:48:11 +0200
+
+atop (1.10-1) unstable; urgency=low
+
+  * New upstream release
+  * increased storage for a number of resources to allow larger values (like
+    reported in #197626)
+  * new commands (see /usr/share/doc/atop/NEWS.Debian.gz for details)
+  * upstream replaced sys/acct.h by linux/acct.h (Closes: #198890)
+  * trailing `pidof atop` removed from init.d/atop (Closes: #199330)
+
+ -- Edelhard Becker <edelhard@debian.org>  Wed,  9 Jul 2003 15:57:14 +0200
+
+atop (1.9-6) unstable; urgency=low
+
+  * changed some 'long's to 'long long's to prevent overflows at 2GB
+    (Closes: #197626)
+  * bumped standards to 3.5.10
+
+ -- Edelhard Becker <edelhard@debian.org>  Mon, 16 Jun 2003 21:23:21 +0200
+
+atop (1.9-5) unstable; urgency=low
+
+  * changed Architecture to any (Closes: #192620)
+  * logrotate now should work - seems that atop needs more time after stopping
+    via start-stop-daemon than logrotate waits
+  * changed maintainer e-mail to my debian account
+  * force inclusion of orig.tar.gz via dpkg-buildpackage -sa
+
+ -- Edelhard Becker <edelhard@debian.org>  Mon, 26 May 2003 18:30:02 +0200
+
+atop (1.9-4) unstable; urgency=low
+
+  * improved logrotate (again)
+  * new upload should include atop-1.9.orig.tar.gz (Closes: #192344)
+
+ -- Edelhard Becker <becker@edelhard.de>  Thu,  8 May 2003 12:38:51 +0200
+
+atop (1.9-2) unstable; urgency=low
+
+  * added -oknodo to start-stop-deamon to allow smooth upgrade
+  * improved upgrade / logrotate handling
+
+ -- Edelhard Becker <becker@edelhard.de>  Fri,  2 May 2003 16:56:19 +0200
+
+atop (1.9-1) unstable; urgency=low
+
+  * Initial Release.
+  * removed atop.{daily,24hours,cron}, rely on init.d/atop instead
+  * add support for logrotate
+  * Initial upload (Closes: #190729)
+
+ -- Edelhard Becker <becker@edelhard.de>  Fri, 25 Apr 2003 14:27:39 +0200
+

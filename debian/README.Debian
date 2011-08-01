@@ -1,0 +1,23 @@
+atop Debian package
+-------------------
+
+For comprehensive screenshots of atops capabilities and features and the HTML
+online manual (if you don't have dwww and/or man2html installed locally) visit
+the new official homepage at http://www.atconsultancy.nl/atop/home.html.
+
+Edelhard Becker <edelhard@debian.org> Sat, 18 Dec 2004 12:59:37 +0100
+
+There are the following changes made to the upstream source:
+
+ - when installed, this package is started via init
+ - the kernel patch is not installed (mentioned in atop.1)
+ - the handling of logfiles is automated with logrotate (mentioned in atop.1)
+
+Edelhard Becker <becker@edelhard.de> Fri Apr 25 12:26:45 CEST 2003
+
+With release 1.10 the raw binary log file format has changed. This should be no
+big problem since the package only keeps 14 rotations (i.e. 2 weeks when
+rotated daily as the default is) of logfiles.  If you need to replay old
+logfiles, just install 1.9-6 additionally.
+
+Edelhard Becker <edelhard@debian.org> Mon, 30 Jun 2003 16:44:50 +0200

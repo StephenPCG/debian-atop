@@ -1,0 +1,8 @@
+atop (1.13-1) unstable; urgency=low
+
+  This new upstream release adds, among the usual bugfixes, recognition of
+  thread-groups and scheduling information. The log-file format has changed to
+  store the new information. This means that you can't read logs from the
+  previous releases.
+
+ -- Edelhard Becker <edelhard@debian.org>  Fri, 24 Sep 2004 11:09:04 +0200
