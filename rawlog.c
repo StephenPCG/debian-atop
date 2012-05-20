@@ -4,11 +4,11 @@
 ** The program 'atop' offers the possibility to view the activity of 
 ** the system on system-level as well as process-level.
 ** ==========================================================================
-** Author:      Gerlof Langeveld - AT Computing, Nijmegen, Holland
-** E-mail:      gerlof@ATComputing.nl
+** Author:      Gerlof Langeveld
+** E-mail:      gerlof.langeveld@atoptool.nl
 ** Date:        September 2002
 ** --------------------------------------------------------------------------
-** Copyright (C) 2000-2005 Gerlof Langeveld
+** Copyright (C) 2000-2010 Gerlof Langeveld
 **
 ** This program is free software; you can redistribute it and/or modify it
 ** under the terms of the GNU General Public License as published by the
@@ -26,6 +26,38 @@
 ** --------------------------------------------------------------------------
 **
 ** $Log: rawlog.c,v $
+** Revision 1.31  2010/11/17 12:43:31  gerlof
+** The flag -r followed by exactly 8 'y' characters is not considered
+** as 8 days ago, but as a literal filename.
+**
+** Revision 1.30  2010/10/23 14:03:03  gerlof
+** Counters for total number of running and sleep threads (JC van Winkel).
+**
+** Revision 1.29  2010/04/23 13:55:52  gerlof
+** Get rid of all setuid-root privs before activating other program.
+**
+** Revision 1.28  2010/04/23 12:19:35  gerlof
+** Modified mail-address in header.
+**
+** Revision 1.27  2010/04/16 12:55:16  gerlof
+** Automatically start another version of atop if the logfile to
+** be read has not been created by the current version.
+**
+** Revision 1.26  2010/03/02 13:55:29  gerlof
+** Struct stat size did not fit in short any more (modified to int).
+**
+** Revision 1.25  2009/12/17 08:16:06  gerlof
+** Introduce branch-key to go to specific time in raw file.
+**
+** Revision 1.24  2009/11/27 15:26:29  gerlof
+** Added possibility to specify y[y..] als filename for -r flag
+** to access file of yesterday, day before yesterday, etc.
+**
+** Revision 1.23  2009/11/27 14:28:14  gerlof
+** Rollback a "transaction" when not all parts could be
+** written to the logfile (e.g. file system full) to avoid
+** a corrupted logfile.
+**
 ** Revision 1.22  2008/01/07 10:18:05  gerlof
 ** Implement possibility to make summaries.
 **
@@ -100,7 +132,7 @@
 **
 */
 
-static const char rcsid[] = "$Id: rawlog.c,v 1.22 2008/01/07 10:18:05 gerlof Exp $";
+static const char rcsid[] = "$Id: rawlog.c,v 1.31 2010/11/17 12:43:31 gerlof Exp $";
 
 #include <sys/types.h>
 #include <sys/param.h>
@@ -110,15 +142,19 @@ static const char rcsid[] = "$Id: rawlog.c,v 1.22 2008/01/07 10:18:05 gerlof Exp
 #include <stdio.h>
 #include <errno.h>
 #include <fcntl.h>
-#include <unistd.h>
 #include <stdlib.h>
 #include <signal.h>
 #include <ctype.h>
 #include <sys/utsname.h>
 #include <string.h>
+#include <regex.h>
 #include <zlib.h>
+#include <sys/time.h>
+#include <sys/resource.h>
+#include <unistd.h>
 
 #include "atop.h"
+#include "showgeneric.h"
 #include "photoproc.h"
 #include "photosyst.h"
 
@@ -145,12 +181,14 @@ struct rawheader {
 	unsigned int	magic;
 
 	unsigned short	aversion;	/* creator atop version with MSB */
-	unsigned short	sstatlen;	/* length of struct sstat        */
-	unsigned short	pstatlen;	/* length of struct pstat        */
+	unsigned short	future1;	/* can be reused 		 */
+	unsigned short	future2;	/* can be reused 		 */
 	unsigned short	rawheadlen;	/* length of struct rawheader    */
 	unsigned short	rawreclen;	/* length of struct rawrecord    */
 	unsigned short	hertz;		/* clock interrupts per second   */
-	unsigned short	sfuture[5];	/* future use                    */
+	unsigned short	sfuture[6];	/* future use                    */
+	unsigned int	sstatlen;	/* length of struct sstat        */
+	unsigned int	pstatlen;	/* length of struct pstat        */
 	struct utsname	utsname;	/* info about this system        */
 	char		cfuture[8];	/* future use                    */
 
@@ -174,6 +212,9 @@ struct rawrecord {
 	unsigned int	nlist;		/* number of processes in list  */
 	unsigned int	npresent;	/* total number of processes    */
 	unsigned int	nexit;		/* number of exited processes   */
+	unsigned int    ntrun;		/* number of running  threads	*/
+	unsigned int    ntslpi;		/* number of sleeping threads(S)*/
+	unsigned int    ntslpu;		/* number of sleeping threads(D)*/
 	unsigned int	nzombie;	/* number of zombie processes   */
 	unsigned int	ifuture[6];	/* future use                   */
 };
@@ -184,6 +225,7 @@ static int	getrawpstat(int, struct pstat *, int, int);
 static int	rawwopen(void);
 static int	lookslikedatetome(char *);
 static void	testcompval(int, char *);
+static void	try_other_version(int, int);
 
 /*
 ** write a raw record to file
@@ -192,12 +234,13 @@ static void	testcompval(int, char *);
 char
 rawwrite(time_t curtime, int numsecs, 
 	 struct sstat *ss, struct pstat *ps,
-	 int nlist, int npresent, int nzombie,
-	 int nexit, char flag)
+	 int nlist, int npresent, int ntrun, int ntslpi, int ntslpu,
+         int nzombie, int nexit, char flag)
 {
 	static int		rawfd = -1;
 	struct rawrecord	rr;
 	int			rv;
+	struct stat		filestat;
 
 	Byte			scompbuf[sizeof(struct sstat)], *pcompbuf;
 	unsigned long		scomplen = sizeof scompbuf;
@@ -209,6 +252,13 @@ rawwrite(time_t curtime, int numsecs,
 	*/
 	if (rawfd == -1)
 		rawfd = rawwopen();
+
+	/*
+ 	** register current size of file in order to "roll back"
+	** writes that have been done while not *all* writes could
+	** succeed, e.g. when file system full
+	*/
+	(void) fstat(rawfd, &filestat);
 
 	/*
 	** compress system- and process-level statistics
@@ -238,6 +288,9 @@ rawwrite(time_t curtime, int numsecs,
 	rr.flags	= 0;
 	rr.nlist	= nlist;
 	rr.npresent	= npresent;
+	rr.ntrun	= ntrun;
+	rr.ntslpi	= ntslpi;
+	rr.ntslpu	= ntslpu;
 	rr.nzombie	= nzombie;
 	rr.nexit	= nexit;
 	rr.scomplen	= scomplen;
@@ -250,6 +303,7 @@ rawwrite(time_t curtime, int numsecs,
 	{
 		fprintf(stderr, "%s - ", rawname);
 		perror("write raw record");
+		(void) ftruncate(rawfd, filestat.st_size);
 		cleanstop(7);
 	}
 
@@ -260,6 +314,7 @@ rawwrite(time_t curtime, int numsecs,
 	{
 		fprintf(stderr, "%s - ", rawname);
 		perror("write raw status record");
+		(void) ftruncate(rawfd, filestat.st_size);
 		cleanstop(7);
 	}
 
@@ -270,6 +325,7 @@ rawwrite(time_t curtime, int numsecs,
 	{
 		fprintf(stderr, "%s - ", rawname);
 		perror("write raw process record");
+		(void) ftruncate(rawfd, filestat.st_size);
 		cleanstop(7);
 	}
 
@@ -393,9 +449,10 @@ rawwopen()
 #define	OFFCHUNK	256
 
 void
-rawread(unsigned int begintime, unsigned int endtime)
+rawread(void)
 {
-	int			rawfd;
+	int			rawfd, len;
+	char			*py;
 	struct rawheader	rh;
 	struct rawrecord	rr;
 	struct sstat		devsstat;
@@ -415,7 +472,7 @@ rawread(unsigned int begintime, unsigned int endtime)
 	time_t			timenow;
 	struct tm		*tp;
 
-	switch ( strlen(rawname) )
+	switch ( len = strlen(rawname) )
 	{
 	   /*
 	   ** if no filename is specified, assemble the name of the raw file
@@ -449,8 +506,40 @@ rawread(unsigned int begintime, unsigned int endtime)
 			snprintf(rawname, RAWNAMESZ, "%s/atop_%s",
 				BASEPATH, 
 				savedname);
+			break;
 		}
-		break;
+
+	   /*
+	   ** if one or more 'y' (yesterday) characters are used and that
+	   ** string is not known as an existing file, the standard logfile
+	   ** is shown from N days ago (N is determined by the number
+	   ** of y's).
+	   */
+	   default:
+		if ( access(rawname, F_OK) == 0) 
+			break;		/* existing file */
+
+		/*
+		** make a string existing of y's to compare with
+		*/
+		py = malloc(len+1);
+		memset(py, 'y', len);
+		*(py+len) = '\0';
+
+		if ( strcmp(rawname, py) == 0 )
+		{
+			timenow	 = time(0);
+			timenow -= len*3600*24;
+			tp	 = localtime(&timenow);
+
+			snprintf(rawname, RAWNAMESZ, "%s/atop_%04d%02d%02d",
+				BASEPATH, 
+				tp->tm_year+1900,
+				tp->tm_mon+1,
+				tp->tm_mday);
+		}
+
+		free(py);
 	}
 
 	/*
@@ -525,9 +614,18 @@ rawread(unsigned int begintime, unsigned int endtime)
 				"(created by version %d.%d - "
 				"current version %d.%d)\n",
 				(rh.aversion >> 8) & 0x7f,
-				 rh.aversion & 0xff,
+				 rh.aversion       & 0xff,
 				 getnumvers() >> 8,
 				 getnumvers() & 0x7f);
+		}
+
+		close(rawfd);
+
+		if (((rh.aversion >> 8) & 0x7f) != (getnumvers()   >> 8) ||
+		     (rh.aversion       & 0xff) != (getnumvers() & 0x7f)   )
+		{
+			try_other_version((rh.aversion >> 8) & 0x7f,
+			                rh.aversion       & 0xff);
 		}
 
 		cleanstop(7);
@@ -594,14 +692,22 @@ rawread(unsigned int begintime, unsigned int endtime)
 			** check if this sample is within the time-range
 			** specified with the -b and -e flags (if any)
 			*/
-			if ( (begintime && begintime > secsinday) ||
-			     (endtime   && endtime   < secsinday)   )
+			if ( (begintime && begintime > secsinday) )
 			{
-				lastcmd = '\0';
+				lastcmd = 1;
 				lseek(rawfd, rr.scomplen+rr.pcomplen, SEEK_CUR);
 				continue;
 			}
-	
+
+			begintime = 0;
+
+			if ( (endtime && endtime < secsinday) )
+			{
+				free(offlist);
+				close(rawfd);
+				return;
+			}
+
 			/*
 			** allocate space, read compressed system-level
 			** statistics and decompress
@@ -641,13 +747,14 @@ rawread(unsigned int begintime, unsigned int endtime)
 			lastcmd = (vis.show_samp)(rr.curtime, rr.interval,
 						&devsstat,    devpstat,
 					 	rr.nlist,     rr.npresent,
-						rr.nzombie,   rr.nexit,
-						flags);
+					 	rr.ntrun,     rr.ntslpi,
+					 	rr.ntslpu,    rr.nzombie,
+						rr.nexit,     flags);
 			free(devpstat);
 	
 			switch (lastcmd)
 			{
-			   case 'T':
+			   case MSAMPPREV:
 				if (offcur >= 2)
 					offcur-= 2;
 				else
@@ -656,11 +763,21 @@ rawread(unsigned int begintime, unsigned int endtime)
 				lseek(rawfd, *(offlist+offcur), SEEK_SET);
 				break;
 
-			   case 'r':
+			   case MRESET:
 				lseek(rawfd, *offlist, SEEK_SET);
 				offcur = 1;
+				break;
+
+			   case MSAMPBRANCH:
+				if (begintime && begintime < secsinday)
+				{
+					lseek(rawfd, *offlist, SEEK_SET);
+					offcur = 1;
+				}
 			}
 		}
+
+		begintime = 0;
 
 		if (offcur >= 1)
 			offcur--;
@@ -792,4 +909,55 @@ testcompval(int rv, char *func)
 		        "%s: unexpected error %d\n", func, rv);
 		cleanstop(7);
 	}
+}
+
+/*
+** try to activate another atop- or atopsar-version
+** to read this logfile
+*/
+static void
+try_other_version(int majorversion, int minorversion)
+{
+	char		tmpbuf[1024], *p;
+	extern char	**argvp;
+	int		fds;
+	struct rlimit	rlimit;
+	int 		setresuid(uid_t, uid_t, uid_t);
+
+	/*
+ 	** prepare name of executable file
+	** the current pathname (if any) is stripped off
+	*/
+	snprintf(tmpbuf, sizeof tmpbuf, "%s-%d.%d",
+		(p = strrchr(*argvp, '/')) ? p+1 : *argvp,
+			majorversion, minorversion);
+
+	fprintf(stderr, "trying to activate %s....\n", tmpbuf);
+
+	/*
+	** be sure no open file descriptors are passed
+	** except stdin, stdout en stderr
+	*/
+	(void) getrlimit(RLIMIT_NOFILE, &rlimit);
+
+	for (fds=3; fds < rlimit.rlim_cur; fds++)
+		close(fds);
+
+	/*
+	** be absolutely sure not to pass setuid-root privileges
+	** to the loaded program
+	*/
+	setresuid(getuid(), getuid(), getuid());
+
+	/*
+ 	** load alternative executable image
+	** at this moment the saved-uid might still be set
+	** to 'root' but this is reset at the moment of exec
+	*/
+	(void) execvp(tmpbuf, argvp);
+
+	/*
+	** point of no return, except when exec failed
+	*/
+	fprintf(stderr, "activation of %s failed!\n", tmpbuf);
 }

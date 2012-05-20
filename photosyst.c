@@ -7,12 +7,12 @@
 ** This source-file contains functions to read all relevant system-level
 ** figures.
 ** ==========================================================================
-** Author:      Gerlof Langeveld - AT Computing, Nijmegen, Holland
-** E-mail:      gerlof@ATComputing.nl
+** Author:      Gerlof Langeveld
+** E-mail:      gerlof.langeveld@atoptool.nl
 ** Date:        November 1996
 ** LINUX-port:  June 2000
 ** --------------------------------------------------------------------------
-** Copyright (C) 2000-2005 Gerlof Langeveld
+** Copyright (C) 2000-2010 Gerlof Langeveld
 **
 ** This program is free software; you can redistribute it and/or modify it
 ** under the terms of the GNU General Public License as published by the
@@ -30,6 +30,28 @@
 ** --------------------------------------------------------------------------
 **
 ** $Log: photosyst.c,v $
+** Revision 1.37  2010/11/14 06:42:18  gerlof
+** After opening /proc/cpuinfo, the file descriptor was not closed any more.
+**
+** Revision 1.36  2010/10/23 14:09:50  gerlof
+** Add support for mmcblk disks (MMC/SD cardreaders)
+** Credits: Anssi Hannula
+**
+** Revision 1.35  2010/05/18 19:20:30  gerlof
+** Introduce CPU frequency and scaling (JC van Winkel).
+**
+** Revision 1.34  2010/04/23 12:19:35  gerlof
+** Modified mail-address in header.
+**
+** Revision 1.33  2010/03/04 10:58:05  gerlof
+** Added recognition of device-type /dev/fio...
+**
+** Revision 1.32  2010/03/04 10:52:47  gerlof
+** Support I/O-statistics on logical volumes and MD devices.
+**
+** Revision 1.31  2009/12/17 11:59:16  gerlof
+** Gather and display new counters: dirty cache and guest cpu usage.
+**
 ** Revision 1.30  2008/02/25 13:47:00  gerlof
 ** Experimental code for HTTP statistics.
 **
@@ -124,7 +146,7 @@
 **
 */
 
-static const char rcsid[] = "$Id: photosyst.c,v 1.30 2008/02/25 13:47:00 gerlof Exp $";
+static const char rcsid[] = "$Id: photosyst.c,v 1.37 2010/11/14 06:42:18 gerlof Exp $";
 
 #include <sys/types.h>
 #include <stdio.h>
@@ -132,11 +154,13 @@ static const char rcsid[] = "$Id: photosyst.c,v 1.30 2008/02/25 13:47:00 gerlof 
 #include <unistd.h>
 #include <stdlib.h>
 #include <regex.h>
+#include <sys/stat.h>
 #include <sys/times.h>
 #include <sys/wait.h>
 #include <time.h>
 #include <signal.h>
 #include <string.h>
+#include <dirent.h>
 
 #include <sys/socket.h>
 #include <netinet/in.h>
@@ -147,7 +171,14 @@ static const char rcsid[] = "$Id: photosyst.c,v 1.30 2008/02/25 13:47:00 gerlof 
 
 #define	MAXCNT	64
 
-static int	isrealdisk(char *, char *, int);
+/* return value of isdisk() */
+#define	NONTYPE	0
+#define	DSKTYPE	1
+#define	MDDTYPE	2
+#define	LVMTYPE	3
+
+static int	isdisk(unsigned int, unsigned int,
+			char *, struct perdsk *, int);
 
 static struct ipv6_stats	ipv6_tmp;
 static struct icmpv6_stats	icmpv6_tmp;
@@ -235,6 +266,7 @@ photosyst(struct sstat *si)
 	FILE 		*fp;
 	char		linebuf[1024], nam[64], origdir[1024];
 	static char	part_stats = 1; /* per-partition statistics ? */
+	unsigned int	major, minor;
 #if	HTTPSTATS
 	static int	wwwvalid = 1;
 #endif
@@ -279,6 +311,9 @@ photosyst(struct sstat *si)
 
 					if (nr > 8)	/* steal support */
 						si->cpu.all.steal = cnts[7];
+
+					if (nr > 9)	/* guest support */
+						si->cpu.all.guest = cnts[8];
 				}
 				continue;
 			}
@@ -301,6 +336,9 @@ photosyst(struct sstat *si)
 
 					if (nr > 8)	/* steal support */
 						si->cpu.cpu[i].steal = cnts[7];
+
+					if (nr > 9)	/* guest support */
+						si->cpu.cpu[i].guest = cnts[8];
 				}
 
 				si->cpu.nrcpu++;
@@ -358,6 +396,131 @@ photosyst(struct sstat *si)
 
 		fclose(fp);
 	}
+
+	/*
+	** gather frequency scaling info.
+        ** sources (in order of preference): 
+        **     /sys/devices/system/cpu/cpu0/cpufreq/stats/time_in_state
+        ** or
+        **     /sys/devices/system/cpu/cpu0/cpufreq/scaling_cur_freq
+        **     /sys/devices/system/cpu/cpu0/cpufreq/scaling_max_freq
+        **
+	** store them in binary form
+	*/
+        static char fn[80];
+        int didone=0;
+
+        for (i = 0; i < si->cpu.nrcpu; ++i)
+        {
+                long long f=0;
+
+                sprintf(fn,
+                   "/sys/devices/system/cpu/cpu%d/cpufreq/stats/time_in_state",
+                   i);
+
+                if ((fp=fopen(fn, "r")) != 0)
+                {
+                        long long hits=0;
+                        long long maxfreq=0;
+                        long long cnt=0;
+                        long long sum=0;
+
+                        while (fscanf(fp, "%lld %lld", &f, &cnt) == 2)
+                        {
+                                f	/= 1000;
+                                sum 	+= (f*cnt);
+                                hits	+= cnt;
+
+                                if (f > maxfreq)
+                        		maxfreq=f;
+                        }
+
+	                si->cpu.cpu[i].freqcnt.maxfreq	= maxfreq;
+	                si->cpu.cpu[i].freqcnt.cnt	= sum;
+	                si->cpu.cpu[i].freqcnt.ticks	= hits;
+
+                        fclose(fp);
+                        didone=1;
+                }
+		else
+		{    // governor statistics not available
+                     sprintf(fn,  
+                      "/sys/devices/system/cpu/cpu%d/cpufreq/cpuinfo_max_freq",
+		      i);
+
+                        if ((fp=fopen(fn, "r")) != 0)
+                        {
+                                if (fscanf(fp, "%lld", &f) == 1)
+                                {
+  					// convert KHz to MHz
+	                                si->cpu.cpu[i].freqcnt.maxfreq =f/1000; 
+                                }
+
+                                didone=1;
+                                fclose(fp);
+                        }
+                        else 
+                        {
+	                        si->cpu.cpu[i].freqcnt.maxfreq=0;
+                        }
+
+                       sprintf(fn,  
+                       "/sys/devices/system/cpu/cpu%d/cpufreq/scaling_cur_freq",
+		       i);
+        
+                        if ((fp=fopen(fn, "r")) != 0)
+                        {
+                                if (fscanf(fp, "%lld", &f) == 1)
+                                {
+   					// convert KHz to MHz
+                                        si->cpu.cpu[i].freqcnt.cnt   = f/1000;
+                                        si->cpu.cpu[i].freqcnt.ticks = 0;
+                                }
+
+                                fclose(fp);
+                                didone=1;
+                        }
+                        else
+                        {
+                                si->cpu.cpu[i].freqcnt.maxfreq	= 0;
+                                si->cpu.cpu[i].freqcnt.cnt	= 0;
+                                si->cpu.cpu[i].freqcnt.ticks 	= 0;
+                                break;    // use cpuinfo
+                        }
+                }
+        } // for all CPUs
+
+        if (!didone)     // did not get processor freq statistics.
+                         // use /proc/cpuinfo
+        {
+	        if ( (fp = fopen("cpuinfo", "r")) != NULL)
+                {
+                        // get information from the lines
+                        // processor\t: 0
+                        // cpu MHz\t\t: 800.000
+                        
+                        int cpuno=-1;
+
+		        while ( fgets(linebuf, sizeof(linebuf), fp) != NULL)
+                        {
+                                if (memcmp(linebuf, "processor", 9)== EQ)
+					sscanf(linebuf, "%*s %*s %d", &cpuno);
+
+                                if (memcmp(linebuf, "cpu MHz", 7) == EQ)
+				{
+                                        if (cpuno >= 0 && cpuno < si->cpu.nrcpu)
+					{
+						sscanf(linebuf,
+							"%*s %*s %*s %lld",
+                                	     		&(si->cpu.cpu[cpuno].freqcnt.cnt));
+					}
+                                }
+                        }
+
+			fclose(fp);
+                }
+
+        }
 
 	/*
 	** gather virtual memory statistics from the file /proc/vmstat and
@@ -429,7 +592,7 @@ photosyst(struct sstat *si)
 
 	if ( (fp = fopen("meminfo", "r")) != NULL)
 	{
-		int	nrfields = 9;	/* number of fields to be filled */
+		int	nrfields = 10;	/* number of fields to be filled */
 
 		while ( fgets(linebuf, sizeof(linebuf), fp) != NULL && 
 								nrfields > 0)
@@ -466,6 +629,12 @@ photosyst(struct sstat *si)
 							cnts[0]*1024/pagesize;
 						nrfields--;
 					}
+				}
+			else	if (strcmp("Dirty:", nam) == EQ)
+				{
+					si->mem.cachedrt  =
+							cnts[0]*1024/pagesize;
+					nrfields--;
 				}
 			else	if (strcmp("MemTotal:", nam) == EQ)
 				{
@@ -712,12 +881,12 @@ photosyst(struct sstat *si)
 			      "%*d %*d %*d %255s %lld %*d %lld %*d "
 			      "%lld %*d %lld %*d %*d %lld %lld",
 			        diskname,
-				&(si->xdsk.xdsk[i].nread),
-				&(si->xdsk.xdsk[i].nrsect),
-				&(si->xdsk.xdsk[i].nwrite),
-				&(si->xdsk.xdsk[i].nwsect),
-				&(si->xdsk.xdsk[i].io_ms),
-				&(si->xdsk.xdsk[i].avque) );
+				&(si->dsk.dsk[i].nread),
+				&(si->dsk.dsk[i].nrsect),
+				&(si->dsk.dsk[i].nwrite),
+				&(si->dsk.dsk[i].nwsect),
+				&(si->dsk.dsk[i].io_ms),
+				&(si->dsk.dsk[i].avque) );
 
 			/*
 			** check if this line concerns the entire disk
@@ -726,9 +895,9 @@ photosyst(struct sstat *si)
 			*/
 			if (nr == 7)	/* full stats-line ? */
 			{
-				if ( !isrealdisk(diskname,
-				                 si->xdsk.xdsk[i].name,
-						 MAXDKNAM) )
+				if ( isdisk(0, 0, diskname,
+				                 &(si->dsk.dsk[i]),
+						 MAXDKNAM) != DSKTYPE)
 				       continue;
 			
 				if (++i >= MAXDSK-1)
@@ -736,8 +905,8 @@ photosyst(struct sstat *si)
 			}
 		}
 
-		si->xdsk.xdsk[i].name[0] = '\0'; /* set terminator for table */
-		si->xdsk.nrxdsk = i;
+		si->dsk.dsk[i].name[0] = '\0'; /* set terminator for table */
+		si->dsk.ndsk = i;
 
 		fclose(fp);
 
@@ -751,41 +920,60 @@ photosyst(struct sstat *si)
 	*/
 	if ( (fp = fopen("diskstats", "r")) != NULL)
 	{
-		char diskname[256];
-		i = 0;
+		char 		diskname[256];
+		struct perdsk	tmpdsk;
+
+		si->dsk.ndsk = 0;
+		si->dsk.nmdd = 0;
+		si->dsk.nlvm = 0;
 
 		while ( fgets(linebuf, sizeof(linebuf), fp) )
 		{
 			nr = sscanf(linebuf,
-			      "%*d %*d %255s %lld %*d %lld %*d "
+			      "%d %d %255s %lld %*d %lld %*d "
 			      "%lld %*d %lld %*d %*d %lld %lld",
-				diskname,
-				&(si->xdsk.xdsk[i].nread),
-				&(si->xdsk.xdsk[i].nrsect),
-				&(si->xdsk.xdsk[i].nwrite),
-				&(si->xdsk.xdsk[i].nwsect),
-				&(si->xdsk.xdsk[i].io_ms),
-				&(si->xdsk.xdsk[i].avque) );
+				&major, &minor, diskname,
+				&tmpdsk.nread,  &tmpdsk.nrsect,
+				&tmpdsk.nwrite, &tmpdsk.nwsect,
+				&tmpdsk.io_ms,  &tmpdsk.avque );
 
 			/*
 			** check if this line concerns the entire disk
 			** or just one of the partitions of a disk (to be
 			** skipped)
 			*/
-			if (nr == 7)	/* full stats-line ? */
+			if (nr == 9)	/* full stats-line ? */
 			{
-				if ( !isrealdisk(diskname,
-				                 si->xdsk.xdsk[i].name,
-						 MAXDKNAM) )
+				switch ( isdisk(major, minor, diskname,
+							 &tmpdsk, MAXDKNAM) )
+				{
+				   case NONTYPE:
 				       continue;
-			
-				if (++i >= MAXDSK-1)
+
+				   case DSKTYPE:
+					if (si->dsk.ndsk < MAXDSK-1)
+					  si->dsk.dsk[si->dsk.ndsk++] = tmpdsk;
 					break;
+
+				   case MDDTYPE:
+					if (si->dsk.nmdd < MAXMDD-1)
+					  si->dsk.mdd[si->dsk.nmdd++] = tmpdsk;
+					break;
+
+				   case LVMTYPE:
+					if (si->dsk.nlvm < MAXLVM-1)
+					  si->dsk.lvm[si->dsk.nlvm++] = tmpdsk;
+					break;
+				}
 			}
 		}
 
-		si->xdsk.xdsk[i].name[0] = '\0'; /* set terminator for table */
-		si->xdsk.nrxdsk = i;
+		/*
+ 		** set terminator for table
+ 		*/
+		si->dsk.dsk[si->dsk.ndsk].name[0] = '\0';
+		si->dsk.mdd[si->dsk.nmdd].name[0] = '\0';
+		si->dsk.lvm[si->dsk.nlvm].name[0] = '\0'; 
 
 		fclose(fp);
 	}
@@ -803,17 +991,19 @@ photosyst(struct sstat *si)
 
 /*
 ** set of subroutines to determine which disks should be monitored
-** and to translate long name strings into short name strings
+** and to translate name strings into (shorter) name strings
 */
 static void
-nullmodname(char *curname, char *newname, int maxlen)
+nullmodname(unsigned int major, unsigned int minor,
+		char *curname, struct perdsk *px, int maxlen)
 {
-	strncpy(newname, curname, maxlen-1);
-	*(newname+maxlen-1) = 0;
+	strncpy(px->name, curname, maxlen-1);
+	*(px->name+maxlen-1) = 0;
 }
 
 static void
-abbrevname1(char *curname, char *newname, int maxlen)
+abbrevname1(unsigned int major, unsigned int minor,
+		char *curname, struct perdsk *px, int maxlen)
 {
 	char	cutype[128];
 	int	hostnum, busnum, targetnum, lunnum;
@@ -821,34 +1011,148 @@ abbrevname1(char *curname, char *newname, int maxlen)
 	sscanf(curname, "%[^/]/host%d/bus%d/target%d/lun%d",
 			cutype, &hostnum, &busnum, &targetnum, &lunnum);
 
-	snprintf(newname, maxlen, "%c-h%db%dt%d", 
+	snprintf(px->name, maxlen, "%c-h%db%dt%d", 
 			cutype[0], hostnum, busnum, targetnum);
 }
 
 /*
-** table contains the names (in regexp format) of valid disks
-** to be supported, together a function to modify the name-strings
-** (i.e. to abbreviate long strings);
-** this table is used in the function isrealdisk()
+** recognize LVM logical volumes
+*/
+#define	NUMDMHASH	64
+#define	DMHASH(x,y)	(((x)+(y))%NUMDMHASH)	
+#define	MAPDIR		"/dev/mapper"
+
+struct devmap {
+	unsigned int	major;
+	unsigned int	minor;
+	char		name[MAXDKNAM];
+	struct devmap	*next;
+};
+
+static void
+lvmmapname(unsigned int major, unsigned int minor,
+		char *curname, struct perdsk *px, int maxlen)
+{
+	static int		firstcall = 1;
+	static struct devmap	*devmaps[NUMDMHASH], *dmp;
+	int			hashix;
+
+	/*
+ 	** setup a list of major-minor numbers of dm-devices with their
+	** corresponding name
+	*/
+	if (firstcall)
+	{
+		DIR		*dirp;
+		struct dirent	*dentry;
+		struct stat	statbuf;
+		char		path[64];
+
+		if ( (dirp = opendir(MAPDIR)) )
+		{
+			/*
+	 		** read every directory-entry and search for
+			** block devices
+			*/
+			while ( (dentry = readdir(dirp)) )
+			{
+				snprintf(path, sizeof path, "%s/%s", 
+						MAPDIR, dentry->d_name);
+
+				if ( stat(path, &statbuf) == -1 )
+					continue;
+
+				if ( ! S_ISBLK(statbuf.st_mode) )
+					continue;
+				/*
+ 				** allocate struct to store name
+				*/
+				if ( !(dmp = malloc(sizeof (struct devmap))))
+					continue;
+
+				/*
+ 				** store info in hash list
+				*/
+				strncpy(dmp->name, dentry->d_name, MAXDKNAM);
+				dmp->name[MAXDKNAM-1] = 0;
+				dmp->major 	= major(statbuf.st_rdev);
+				dmp->minor 	= minor(statbuf.st_rdev);
+
+				hashix = DMHASH(dmp->major, dmp->minor);
+
+				dmp->next	= devmaps[hashix];
+
+				devmaps[hashix]	= dmp;
+			}
+
+			closedir(dirp);
+		}
+
+		firstcall = 0;
+	}
+
+	/*
+ 	** find info in hash list
+	*/
+	hashix  = DMHASH(major, minor);
+	dmp	= devmaps[hashix];
+
+	while (dmp)
+	{
+		if (dmp->major == major && dmp->minor == minor)
+		{
+			/*
+		 	** info found in hash list; fill proper name
+			*/
+			strncpy(px->name, dmp->name, maxlen-1);
+			*(px->name+maxlen-1) = 0;
+			return;
+		}
+
+		dmp = dmp->next;
+	}
+
+	/*
+	** info not found in hash list; fill original name
+	*/
+	strncpy(px->name, curname, maxlen-1);
+	*(px->name+maxlen-1) = 0;
+}
+
+/*
+** this table is used in the function isdisk()
+**
+** table contains the names (in regexp format) of disks
+** to be recognized, together with a function to modify
+** the name-strings (i.e. to abbreviate long strings);
+** some frequently found names (like 'loop' and 'ram')
+** are also recognized to skip them as fast as possible
 */
 static struct {
 	char 	*regexp;
 	regex_t	compreg;
-	void	(*modname)(char *, char *, int);
+	void	(*modname)(unsigned int, unsigned int,
+				char *, struct perdsk *, int);
+	int	retval;
 } validdisk[] = {
-	{	"^sd[a-z][a-z]*$",			{0}, 	nullmodname, },
-	{	"^hd[a-z]$",				{0},	nullmodname, },
-	{	"^rd/c[0-9][0-9]*d[0-9][0-9]*$",	{0},	nullmodname, },
-	{	"^cciss/c[0-9][0-9]*d[0-9][0-9]*$",	{0},	nullmodname, },
-	{ 	"/host.*/bus.*/target.*/lun.*/disc",	{0},	abbrevname1, },
-
-	/* virtual disks */
-	{	"^xvd[a-z][a-z]*$",			{0},	nullmodname, },
-	{	"^dasd[a-z][a-z]*$",			{0},	nullmodname, },
+	{ "^ram[0-9][0-9]*$",			{0},  (void *)0,   NONTYPE, },
+	{ "^loop[0-9][0-9]*$",			{0},  (void *)0,   NONTYPE, },
+	{ "^sd[a-z][a-z]*$",			{0},  nullmodname, DSKTYPE, },
+	{ "^dm-[0-9][0-9]*$",			{0},  lvmmapname,  LVMTYPE, },
+	{ "^md[0-9][0-9]*$",			{0},  nullmodname, MDDTYPE, },
+	{ "^hd[a-z]$",				{0},  nullmodname, DSKTYPE, },
+	{ "^rd/c[0-9][0-9]*d[0-9][0-9]*$",	{0},  nullmodname, DSKTYPE, },
+	{ "^cciss/c[0-9][0-9]*d[0-9][0-9]*$",	{0},  nullmodname, DSKTYPE, },
+	{ "^fio[a-z][a-z]*$",			{0},  nullmodname, DSKTYPE, },
+	{ "/host.*/bus.*/target.*/lun.*/disc",	{0},  abbrevname1, DSKTYPE, },
+	{ "^xvd[a-z][a-z]*$",			{0},  nullmodname, DSKTYPE, },
+	{ "^dasd[a-z][a-z]*$",			{0},  nullmodname, DSKTYPE, },
+	{ "^mmcblk[0-9][0-9]*$",		{0},  nullmodname, DSKTYPE, },
 };
 
 static int
-isrealdisk(char *curname, char *newname, int maxlen)
+isdisk(unsigned int major, unsigned int minor,
+           char *curname, struct perdsk *px, int maxlen)
 {
 	static int	firstcall = 1;
 	register int	i;
@@ -871,13 +1175,15 @@ isrealdisk(char *curname, char *newname, int maxlen)
 			/*
 			** name-string recognized; modify name-string
 			*/
-			(*validdisk[i].modname)(curname, newname, maxlen);
+			if (validdisk[i].retval != NONTYPE)
+				(*validdisk[i].modname)(major, minor,
+						curname, px, maxlen);
 
-			return 1;
+			return validdisk[i].retval;
 		}
 	}
 
-	return 0;
+	return NONTYPE;
 }
 
 /*

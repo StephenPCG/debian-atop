@@ -9,12 +9,12 @@
 ** all running processes, needed to remember the process-counters from
 ** the previous sample.
 ** ==========================================================================
-** Author:      Gerlof Langeveld - AT Computing, Nijmegen, Holland
-** E-mail:      gerlof@ATComputing.nl
+** Author:      Gerlof Langeveld
+** E-mail:      gerlof.langeveld@atoptool.nl
 ** Date:        November 1996
 ** LINUX-port:  June 2000
 ** --------------------------------------------------------------------------
-** Copyright (C) 2000-2005 Gerlof Langeveld
+** Copyright (C) 2000-2010 Gerlof Langeveld
 **
 ** This program is free software; you can redistribute it and/or modify it
 ** under the terms of the GNU General Public License as published by the
@@ -32,6 +32,9 @@
 ** --------------------------------------------------------------------------
 **
 ** $Log: procdbase.c,v $
+** Revision 1.8  2010/04/23 12:19:35  gerlof
+** Modified mail-address in header.
+**
 ** Revision 1.7  2007/11/05 12:12:31  gerlof
 ** Match processes not only on pid, but also on start time.
 **
@@ -55,7 +58,7 @@
 **
 */
 
-static const char rcsid[] = "$Id: procdbase.c,v 1.7 2007/11/05 12:12:31 gerlof Exp $";
+static const char rcsid[] = "$Id: procdbase.c,v 1.8 2010/04/23 12:19:35 gerlof Exp $";
 
 #include <sys/types.h>
 #include <sys/param.h>

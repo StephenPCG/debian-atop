@@ -6,8 +6,8 @@
 **
 ** Include-file describing miscellaneous constants and function-prototypes.
 ** ================================================================
-** Author:      Gerlof Langeveld - AT Computing, Nijmegen, Holland
-** E-mail:      gerlof@ATComputing.nl
+** Author:      Gerlof Langeveld
+** E-mail:      gerlof.langeveld@atoptool.nl
 ** Date:        November 1996
 ** LINUX-port:  June 2000
 **
@@ -32,6 +32,7 @@
 #define	KBFORMAT	1
 #define	MBFORMAT	2
 #define	GBFORMAT	3
+#define	TBFORMAT	4
 #define	OVFORMAT	9
 
 typedef	long long	count_t;
@@ -47,7 +48,7 @@ struct sstat;
 
 struct visualize {
 	char	(*show_samp)  (time_t, int, struct sstat *, struct pstat *,
-				int, int, int, int, char);
+				int, int, int, int, int, int, int, char);
 	void	(*show_error) (const char *, ...);
 	void	(*show_end)   (void);
 	void	(*show_usage) (void);
@@ -57,14 +58,17 @@ struct visualize {
 ** external values
 */
 extern struct utsname   utsname;
+extern int              utsnodenamelen;
 extern time_t   	pretime;
 extern time_t   	curtime;
 extern unsigned long    interval;
 extern unsigned long	sampcnt;
 extern char      	screen;
+extern int      	linelen;
 extern char		deviatonly;
 extern char		rawname[];
 extern char		rawreadflag;
+extern unsigned int	begintime, endtime;
 extern char		flaglist[];
 extern struct visualize vis;
 
@@ -96,10 +100,10 @@ extern int		almostcrit;
 /*
 ** structure containing the start-addresses of functions for visualization
 */
-char		generic_samp(time_t, int, struct sstat *, struct pstat *,
-		             int, int, int, int, char);
+char		generic_samp (time_t, int, struct sstat *, struct pstat *,
+		             int, int, int, int, int, int, int, char);
 void		generic_error(const char *, ...);
-void		generic_end(void);
+void		generic_end  (void);
 void		generic_usage(void);
 
 /*
@@ -114,6 +118,8 @@ int		daysecs(time_t);
 char   		*val2valstr(count_t, char *, int, int, int);
 char   		*val2memstr(count_t, char *, int, int, int);
 char		*val2cpustr(count_t, char *);
+char            *val2Hzstr(count_t, char *);
+int             val2elapstr(int, char *);
 
 int		compcpu(const void *, const void *);
 int		compdsk(const void *, const void *);
@@ -127,9 +133,9 @@ int		diskcompar(const void *, const void *);
 int		intfcompar(const void *, const void *);
 
 count_t		subcount(count_t, count_t);
-void  		rawread(unsigned int, unsigned int);
+void  		rawread(void);
 char		rawwrite(time_t, int, struct sstat *, struct pstat *,
-		                       int, int, int, int, char);
+		                       int, int, int, int, int, int, int, char);
 
 int 		numeric(char *);
 void		getalarm(int);

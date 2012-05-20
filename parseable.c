@@ -5,11 +5,11 @@
 ** the system on system-level as well as process-level.
 **
 ** ==========================================================================
-** Author:      Gerlof Langeveld - AT Computing, Nijmegen, Holland
-** E-mail:      gerlof@ATComputing.nl
+** Author:      Gerlof Langeveld
+** E-mail:      gerlof.langeveld@atoptool.nl
 ** Date:        February 2007
 ** --------------------------------------------------------------------------
-** Copyright (C) 2007 Gerlof Langeveld
+** Copyright (C) 2007-2010 Gerlof Langeveld
 **
 ** This program is free software; you can redistribute it and/or modify it
 ** under the terms of the GNU General Public License as published by the
@@ -26,8 +26,26 @@
 ** Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
 ** --------------------------------------------------------------------------
 **
-** $Id: parseable.c,v 1.7 2008/03/06 09:08:29 gerlof Exp $
+** $Id: parseable.c,v 1.13 2010/10/23 14:02:19 gerlof Exp $
 ** $Log: parseable.c,v $
+** Revision 1.13  2010/10/23 14:02:19  gerlof
+** Show counters for total number of running and sleep (S and D) threads.
+**
+** Revision 1.12  2010/05/18 19:20:55  gerlof
+** Introduce CPU frequency and scaling (JC van Winkel).
+**
+** Revision 1.11  2010/04/23 12:19:35  gerlof
+** Modified mail-address in header.
+**
+** Revision 1.10  2010/03/04 10:52:21  gerlof
+** Support I/O-statistics on logical volumes and MD devices.
+**
+** Revision 1.9  2010/01/08 14:46:42  gerlof
+** Added label RESET in case of a sample with values since boot.
+**
+** Revision 1.8  2009/12/19 22:32:14  gerlof
+** Add new counters to parseable output.
+**
 ** Revision 1.7  2008/03/06 09:08:29  gerlof
 ** Bug-solution regarding parseable output of PPID.
 **
@@ -70,6 +88,8 @@ void 	print_CPL();
 void 	print_MEM();
 void 	print_SWP();
 void 	print_PAG();
+void 	print_LVM();
+void 	print_MDD();
 void 	print_DSK();
 void 	print_NET();
 
@@ -96,6 +116,8 @@ static struct labeldef	labeldef[] = {
 	{ "MEM",	0,	print_MEM },
 	{ "SWP",	0,	print_SWP },
 	{ "PAG",	0,	print_PAG },
+	{ "LVM",	0,	print_LVM },
+	{ "MDD",	0,	print_MDD },
 	{ "DSK",	0,	print_DSK },
 	{ "NET",	0,	print_NET },
 
@@ -187,11 +209,17 @@ parsedef(char *pd)
 char
 parseout(time_t curtime, int numsecs,
 	 struct sstat *ss, struct pstat *ps,
-	 int nlist, int npresent, int nzombie,
+	 int nlist, int npresent, int trun, int tslpi, int tslpu, int nzombie,
 	 int nexit, char flag)
 {
 	register int	i;
 	char		datestr[32], timestr[32], header[256];
+
+	/*
+	** print reset-label for sample-values since boot
+	*/
+	if (flag&RRBOOT)
+		printf("RESET\n");
 
 	/*
 	** search all labels which are selected before
@@ -230,10 +258,54 @@ parseout(time_t curtime, int numsecs,
 /*
 ** print functions for system-level statistics
 */
+void 
+calc_freqscale(count_t maxfreq, count_t cnt, count_t ticks, 
+               count_t *freq, int* freqperc)
+{
+        // if ticks != 0, do full calcs
+        if (ticks) 
+        {
+            *freq=cnt/ticks;
+            *freqperc=100* *freq / maxfreq;
+        } 
+        else if (maxfreq)   // max frequency is known so % can be calculated
+        {
+            *freq=cnt;
+            *freqperc=100*cnt/maxfreq;
+        }
+        else if (cnt)       // no max known, set % to 100
+        {
+            *freq=cnt;
+            *freqperc=100;
+        }
+        else                // nothing is known: set freq to 0, % to 100
+        {
+            *freq=0;
+            *freqperc=100;
+        }
+}
+
+
 void
 print_CPU(char *hp, struct sstat *ss, struct pstat *ps, int nact)
 {
-	printf("%s %u %lld %lld %lld %lld %lld %lld %lld %lld %lld\n",
+        count_t maxfreq=0;
+        count_t cnt=0;
+        count_t ticks=0;
+        count_t freq;
+        int freqperc;
+        int i;
+
+        // calculate average clock frequency
+	for (i=0; i < ss->cpu.nrcpu; i++)
+        {
+                cnt    += ss->cpu.cpu[i].freqcnt.cnt;
+                ticks  += ss->cpu.cpu[i].freqcnt.ticks;
+        }
+        maxfreq = ss->cpu.cpu[0].freqcnt.maxfreq;
+        calc_freqscale(maxfreq, cnt, ticks, &freq, &freqperc);
+
+	printf("%s %u %lld %lld %lld %lld %lld %lld %lld %lld %lld %lld %lld %d\n",
 			hp,
 			hertz,
 	        	ss->cpu.nrcpu,
@@ -244,17 +316,33 @@ print_CPU(char *hp, struct sstat *ss, struct pstat *ps, int nact)
         		ss->cpu.all.wtime,
         		ss->cpu.all.Itime,
         		ss->cpu.all.Stime,
-        		ss->cpu.all.steal);
+        		ss->cpu.all.steal,
+        		ss->cpu.all.guest,
+                        freq,
+                        freqperc
+                        );
 }
 
 void
 print_cpu(char *hp, struct sstat *ss, struct pstat *ps, int nact)
 {
 	register int i;
+        count_t maxfreq=0;
+        count_t cnt=0;
+        count_t ticks=0;
+        count_t freq;
+        int freqperc;
 
 	for (i=0; i < ss->cpu.nrcpu; i++)
 	{
-		printf("%s %u %d %lld %lld %lld %lld %lld %lld %lld %lld\n",
+                cnt    = ss->cpu.cpu[i].freqcnt.cnt;
+                ticks  = ss->cpu.cpu[i].freqcnt.ticks;
+                maxfreq= ss->cpu.cpu[0].freqcnt.maxfreq;
+
+                calc_freqscale(maxfreq, cnt, ticks, &freq, &freqperc);
+
+		printf("%s %u %d %lld %lld %lld "
+		       "%lld %lld %lld %lld %lld %lld %lld %d\n",
 			hp, hertz, i,
 	        	ss->cpu.cpu[i].stime,
         		ss->cpu.cpu[i].utime,
@@ -263,7 +351,10 @@ print_cpu(char *hp, struct sstat *ss, struct pstat *ps, int nact)
         		ss->cpu.cpu[i].wtime,
         		ss->cpu.cpu[i].Itime,
         		ss->cpu.cpu[i].Stime,
-        		ss->cpu.cpu[i].steal);
+        		ss->cpu.cpu[i].steal,
+        		ss->cpu.cpu[i].guest,
+                        freq,
+                        freqperc);
 	}
 }
 
@@ -283,14 +374,15 @@ print_CPL(char *hp, struct sstat *ss, struct pstat *ps, int nact)
 void
 print_MEM(char *hp, struct sstat *ss, struct pstat *ps, int nact)
 {
-	printf(	"%s %u %lld %lld %lld %lld %lld\n",
+	printf(	"%s %u %lld %lld %lld %lld %lld %lld\n",
 			hp,
 			pagesize,
 			ss->mem.physmem,
 			ss->mem.freemem,
 			ss->mem.cachemem,
 			ss->mem.buffermem,
-			ss->mem.slabmem);
+			ss->mem.slabmem,
+			ss->mem.cachedrt);
 }
 
 void
@@ -320,20 +412,56 @@ print_PAG(char *hp, struct sstat *ss, struct pstat *ps, int nact)
 }
 
 void
+print_LVM(char *hp, struct sstat *ss, struct pstat *ps, int nact)
+{
+	register int	i;
+
+        for (i=0; ss->dsk.lvm[i].name[0]; i++)
+	{
+		printf(	"%s %s %lld %lld %lld %lld %lld\n",
+			hp,
+			ss->dsk.lvm[i].name,
+			ss->dsk.lvm[i].io_ms,
+			ss->dsk.lvm[i].nread,
+			ss->dsk.lvm[i].nrsect,
+			ss->dsk.lvm[i].nwrite,
+			ss->dsk.lvm[i].nwsect);
+	}
+}
+
+void
+print_MDD(char *hp, struct sstat *ss, struct pstat *ps, int nact)
+{
+	register int	i;
+
+        for (i=0; ss->dsk.mdd[i].name[0]; i++)
+	{
+		printf(	"%s %s %lld %lld %lld %lld %lld\n",
+			hp,
+			ss->dsk.mdd[i].name,
+			ss->dsk.mdd[i].io_ms,
+			ss->dsk.mdd[i].nread,
+			ss->dsk.mdd[i].nrsect,
+			ss->dsk.mdd[i].nwrite,
+			ss->dsk.mdd[i].nwsect);
+	}
+}
+
+void
 print_DSK(char *hp, struct sstat *ss, struct pstat *ps, int nact)
 {
 	register int	i;
 
-        for (i=0; ss->xdsk.xdsk[i].name[0]; i++)
+        for (i=0; ss->dsk.dsk[i].name[0]; i++)
 	{
 		printf(	"%s %s %lld %lld %lld %lld %lld\n",
 			hp,
-			ss->xdsk.xdsk[i].name,
-			ss->xdsk.xdsk[i].io_ms,
-			ss->xdsk.xdsk[i].nread,
-			ss->xdsk.xdsk[i].nrsect,
-			ss->xdsk.xdsk[i].nwrite,
-			ss->xdsk.xdsk[i].nwsect);
+			ss->dsk.dsk[i].name,
+			ss->dsk.dsk[i].io_ms,
+			ss->dsk.dsk[i].nread,
+			ss->dsk.dsk[i].nrsect,
+			ss->dsk.dsk[i].nwrite,
+			ss->dsk.dsk[i].nwsect);
 	}
 }
 
@@ -384,7 +512,8 @@ print_PRG(char *hp, struct sstat *ss, struct pstat *ps, int nact)
 
 	for (i=0; i < nact; i++, ps++)
 	{
-		printf("%s %d (%s) %c %d %d %d %d %d %ld (%s) %d %d %d %d\n",
+		printf("%s %d (%s) %c %d %d %d %d %d %ld (%s) %d %d %d %d "
+ 		       "%d %d %d %d %d %d %ld\n",
 				hp,
 				ps->gen.pid,
 				ps->gen.name,
@@ -399,7 +528,14 @@ print_PRG(char *hp, struct sstat *ss, struct pstat *ps, int nact)
 				ps->gen.ppid,
 				ps->gen.nthrrun,
 				ps->gen.nthrslpi,
-				ps->gen.nthrslpu);
+				ps->gen.nthrslpu,
+				ps->gen.euid,
+				ps->gen.egid,
+				ps->gen.suid,
+				ps->gen.sgid,
+				ps->gen.fsuid,
+				ps->gen.fsgid,
+				ps->gen.elaps);
 	}
 }
 

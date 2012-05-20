@@ -7,12 +7,12 @@
 ** This source-file contains the print-functions to visualize the calculated
 ** figures.
 ** ==========================================================================
-** Author:      Gerlof Langeveld - AT Computing, Nijmegen, Holland
-** E-mail:      gerlof@ATComputing.nl
+** Author:      Gerlof Langeveld
+** E-mail:      gerlof.langeveld@atoptool.nl
 ** Date:        November 1996
 ** LINUX-port:  June 2000
 ** --------------------------------------------------------------------------
-** Copyright (C) 2000-2005 Gerlof Langeveld
+** Copyright (C) 2000-2010 Gerlof Langeveld
 **
 ** This program is free software; you can redistribute it and/or modify it
 ** under the terms of the GNU General Public License as published by the
@@ -30,6 +30,68 @@
 ** --------------------------------------------------------------------------
 ** 
 ** $Log: showgeneric.c,v $
+** Revision 1.71  2010/10/25 19:08:32  gerlof
+** When the number of lines is too small for the system-level
+** lines, limit the number of variable resources automatically
+** to a minimum.
+**
+** Revision 1.70  2010/10/23 14:04:05  gerlof
+** Counters for total number of running and sleep threads (JC van Winkel).
+**
+** Revision 1.69  2010/04/23 12:19:35  gerlof
+** Modified mail-address in header.
+**
+** Revision 1.68  2010/04/23 09:58:11  gerlof
+** Version (flag -V) handled earlier after startup.
+**
+** Revision 1.67  2010/04/23 07:57:32  gerlof
+** Proper sorting of processes when switching from single process view
+** to cumulative view (key 'u' or 'p') and vice versa.
+**
+** Revision 1.66  2010/04/17 17:20:26  gerlof
+** Allow modifying the layout of the columns in the system lines.
+**
+** Revision 1.65  2010/03/16 21:13:38  gerlof
+** Program and user selection can be combined with program and user
+** accumulation.
+**
+** Revision 1.64  2010/03/16 20:18:46  gerlof
+** Show in header-line if user selections and program selection are active.
+**
+** Revision 1.63  2010/03/16 20:08:51  gerlof
+** Performance improvement: only sort system-resources once per interval.
+**
+** Revision 1.62  2010/03/04 10:53:01  gerlof
+** Support I/O-statistics on logical volumes and MD devices.
+**
+** Revision 1.61  2009/12/17 10:55:07  gerlof
+** *** empty log message ***
+**
+** Revision 1.60  2009/12/17 10:50:30  gerlof
+** Allow own defined process line with key 'o' and a definition
+** in the atoprc file.
+**
+** Revision 1.59  2009/12/17 09:03:26  gerlof
+** Center message "....since boot" in status line on first screen.
+**
+** Revision 1.58  2009/12/17 08:55:15  gerlof
+** Show messages on status line in color to draw attention.
+**
+** Revision 1.57  2009/12/17 08:16:14  gerlof
+** Introduce branch-key to go to specific time in raw file.
+**
+** Revision 1.56  2009/12/12 09:06:39  gerlof
+** Corrected cumulated disk I/O per user/program (JC van Winkel).
+**
+** Revision 1.55  2009/12/10 13:34:44  gerlof
+** Show which toggle-keys are active in the header line.
+**
+** Revision 1.54  2009/12/10 11:55:03  gerlof
+** Introduce system-wide /etc/atoprc
+**
+** Revision 1.53  2009/12/10 09:53:08  gerlof
+** Improved display of header-line (JC van Winkel).
+**
 ** Revision 1.52  2008/03/06 10:14:01  gerlof
 ** Modified help-messages.
 **
@@ -193,7 +255,7 @@
 **
 */
 
-static const char rcsid[] = "$Id: showgeneric.c,v 1.52 2008/03/06 10:14:01 gerlof Exp $";
+static const char rcsid[] = "$Id: showgeneric.c,v 1.71 2010/10/25 19:08:32 gerlof Exp $";
 
 #include <sys/types.h>
 #include <sys/param.h>
@@ -218,6 +280,7 @@ static const char rcsid[] = "$Id: showgeneric.c,v 1.52 2008/03/06 10:14:01 gerlo
 #include "photoproc.h"
 #include "photosyst.h"
 #include "showgeneric.h"
+#include "showlinux.h"
 
 struct selection procsel = {"", {USERSTUB, }, "", 0, { 0, }};
 
@@ -232,22 +295,24 @@ static char	showorder = MSORTCPU;
 
 static int	maxcpulines = 999;  /* maximum cpu       lines          */
 static int	maxdsklines = 999;  /* maximum disk      lines          */
+static int	maxmddlines = 999;  /* maximum MDD       lines          */
+static int	maxlvmlines = 999;  /* maximum LVM       lines          */
 static int	maxintlines = 999;  /* maximum interface lines          */
-
-static char    	*genhdr = "ATOP - %-18.18s "
-                          "%s  %s     %12ld seconds elapsed\n";
 
 static int	cumusers(struct pstat *, struct pstat *, int);
 static int	cumprocs(struct pstat *, struct pstat *, int);
+static void	limitedlines(void);
 static long	getnumval(char *, long, int);
 
 
 static int	(*procsort[])(const void *, const void *) = {
-			[MSORTCPU]=compcpu, 
-			[MSORTMEM]=compmem, 
-			[MSORTDSK]=compdsk, 
-			[MSORTNET]=compnet, 
+			[MSORTCPU&0x1f]=compcpu, 
+			[MSORTMEM&0x1f]=compmem, 
+			[MSORTDSK&0x1f]=compdsk, 
+			[MSORTNET&0x1f]=compnet, 
 };
+
+extern proc_printpair ownprocs[];
 
 
 /*
@@ -256,17 +321,22 @@ static int	(*procsort[])(const void *, const void *) = {
 char
 generic_samp(time_t curtime, int nsecs,
            struct sstat *sstat, struct pstat *pstat,
-           int nact, int nproc, int nzomb, int nexit, char flag)
+           int nact, int nproc, int ntrun, int ntslpi, int ntslpu, int nzomb,
+           int nexit, char flag)
 {
 	static int	callnr = 0;
 
 	register int	i, curline, statline;
 	int		firstproc = 0, plistsz, alistsz, killpid, killsig;
 	int		lastchar;
-	char		format1[16], format2[16];
-	char		*statmsg = NULL, curorder, autoorder;
+	char		format1[16], format2[16], hhmm[16];
+	char		*statmsg = NULL, lastorder=0, curorder, autoorder;
+	char		buf[33];
 	struct passwd 	*pwd;
 	struct syscap	syscap;
+
+	struct selection 	*cursel  = &procsel;
+	static struct selection emptysel = {"", {USERSTUB, }, "", 0, { 0, }};
 
 	struct pstat	*save_pstat = NULL;
 	int		 save_nact = 0;
@@ -352,6 +422,10 @@ generic_samp(time_t curtime, int nsecs,
 				showtype  = MPROCARG;
 				break;
 
+			   case MPROCOWN:
+				showtype  = MPROCOWN;
+				break;
+
 			   case MAVGVAL:
 				if (avgval)
 					avgval=0;
@@ -382,14 +456,8 @@ generic_samp(time_t curtime, int nsecs,
 				break;
 
 			   case MSYSLIMIT:
-				maxcpulines = 0;
-				maxdsklines = 5;
-				maxintlines = 3;
+				limitedlines();
 				break;
-
-			   case MVERSION:
-				printf("%s\n", getstrvers());
-				cleanstop(0);
 
 			   default:
 				prusage("atop");
@@ -423,10 +491,10 @@ generic_samp(time_t curtime, int nsecs,
 			cbreak();
 			noecho();
 
-			if (COLS  < 80)
+			if (COLS  < 30)
 			{
 				printw("Not enough columns "
-				       "(need at least %d columns)\n", 80);
+				       "(need at least %d columns)\n", 30);
 				refresh();
 				sleep(3);
 				cleanstop(1);
@@ -458,6 +526,34 @@ generic_samp(time_t curtime, int nsecs,
 	*/
 	totalcap(&syscap, sstat, pstat, nact);
 
+
+	/*
+	** sort per-cpu       		statistics on busy percentage
+	** sort per-logical-volume      statistics on busy percentage
+	** sort per-multiple-device     statistics on busy percentage
+	** sort per-disk      		statistics on busy percentage
+	** sort per-interface 		statistics on busy percentage (if known)
+	*/
+	if (sstat->cpu.nrcpu > 1 && maxcpulines > 0)
+		qsort(sstat->cpu.cpu, sstat->cpu.nrcpu,
+	 	               sizeof sstat->cpu.cpu[0], cpucompar);
+
+	if (sstat->dsk.nlvm > 1 && maxlvmlines > 0)
+		qsort(sstat->dsk.lvm, sstat->dsk.nlvm,
+			       sizeof sstat->dsk.lvm[0], diskcompar);
+
+	if (sstat->dsk.nmdd > 1 && maxmddlines > 0)
+		qsort(sstat->dsk.mdd, sstat->dsk.nmdd,
+			       sizeof sstat->dsk.mdd[0], diskcompar);
+
+	if (sstat->dsk.ndsk > 1 && maxdsklines > 0)
+		qsort(sstat->dsk.dsk, sstat->dsk.ndsk,
+			       sizeof sstat->dsk.dsk[0], diskcompar);
+
+	if (sstat->intf.nrintf > 1 && maxintlines > 0)
+		qsort(sstat->intf.intf, sstat->intf.nrintf,
+		  	       sizeof sstat->intf.intf[0], intfcompar);
+
 	/*
 	** loop in which the system resources and the list of active
 	** processes is shown; the loop will be preempted by receiving
@@ -484,34 +580,39 @@ generic_samp(time_t curtime, int nsecs,
 		if (screen)
 			attron(A_REVERSE);
 
-       		printg(genhdr, utsname.nodename, format1, format2, nsecs);
+                int seclen	= val2elapstr(nsecs, buf);
+                int lenavail 	= (screen ? COLS : linelen) -
+						41 - seclen - utsnodenamelen;
+                int len1	= lenavail / 3;
+                int len2	= lenavail - len1 - len1; 
+
+		printg("ATOP - %s%*s%s  %s%*s%c%c%c%c%c%c%*s%s elapsed", 
+			utsname.nodename, len1, "", 
+			format1, format2, len1, "",
+			fixedhead  			? 'f' : '-',
+			deviatonly 			? '-' : 'a',
+			usecolors  			? '-' : 'x',
+			avgval     			? '1' : '-',
+			procsel.userid[0] != USERSTUB	? 'U' : '-',
+			procsel.procnamesz		? 'P' : '-',
+			len2, "", buf);
 
 		if (screen)
+                {
 			attroff(A_REVERSE);
+			attroff(A_REVERSE);
+                }
+                else
+                {
+                        printg("\n");
+                }
 
 		/*
 		** print cumulative system- and user-time for all processes
 		*/
-		pricumproc(pstat, nact, nproc, nzomb, nexit, avgval, nsecs);
-
-		curline++;
-
-		/*
-		** sort per-cpu       statistics on busy percentage
-		** sort per-disk      statistics on busy percentage
-		** sort per-interface statistics on busy percentage (if known)
-		*/
-		if (sstat->cpu.nrcpu > 1)
-			qsort(sstat->cpu.cpu, sstat->cpu.nrcpu,
-		 	               sizeof sstat->cpu.cpu[0], cpucompar);
-
-		if (sstat->xdsk.nrxdsk > 1)
-			qsort(sstat->xdsk.xdsk, sstat->xdsk.nrxdsk,
-				       sizeof sstat->xdsk.xdsk[0], diskcompar);
-
-		if (sstat->intf.nrintf > 1)
-			qsort(sstat->intf.intf, sstat->intf.nrintf,
-			  	       sizeof sstat->intf.intf[0], intfcompar);
+		pricumproc(pstat, sstat, nact, nproc, ntrun, ntslpi, ntslpu,
+					nzomb, nexit, avgval, nsecs);
+		curline=2;
 
 		/*
 		** print other lines of system-wide statistics
@@ -523,30 +624,70 @@ generic_samp(time_t curtime, int nsecs,
 
 		curline = prisyst(sstat, curline, nsecs, avgval,
 				fixedhead, usecolors, &autoorder,
-				maxcpulines, maxdsklines, maxintlines);
+				maxcpulines, maxdsklines, maxmddlines,
+				maxlvmlines, maxintlines);
 
+		/*
+ 		** if system-wide statistics do not fit,
+		** limit the number of variable resource lines
+		** and try again
+		*/
 		if (screen && curline+2 > LINES)
 		{
-			move(0, 0);
-			clrtobot();
-			move(0, 0);
-			printw("Not enough screen-lines available "
-			       "(need at least %d lines)\n", curline+2);
-			move(1, 0);
-			printw("Resize window or start atop with the -l flag"
-		       	       "to limit system-resources");
+			curline = 2;
 
-			refresh();
-			sleep(4);
-			cleanstop(1);
+			move(curline, 0);
+			clrtobot();
+			move(curline, 0);
+
+			limitedlines();
+			
+			curline = prisyst(sstat, curline, nsecs, avgval,
+					fixedhead, usecolors, &autoorder,
+					maxcpulines, maxdsklines, maxmddlines,
+					maxlvmlines, maxintlines);
+
+			/*
+ 			** if system-wide statistics still do not fit,
+			** the window is really to small
+			*/
+			if (curline+2 > LINES)
+			{
+				move(0, 0);
+				clrtobot();
+				move(0, 0);
+				printw("Not enough screen-lines available "
+			           "(need at least %d lines)\n", curline+2);
+				move(1, 0);
+				printw("Please resize window....");
+
+				refresh();
+				sleep(4);
+				cleanstop(1);
+			}
+			else
+			{
+				statmsg = "Number of variable resources"
+				          " limited to fit number of lines";
+			}
 		}
 
 		statline = curline;
 
+		if (screen)
+        	        move(curline, 0);
+
 		if (statmsg)
 		{
 			clrtoeol();
+			if (usecolors)
+				attron(COLOR_PAIR(COLORLOW));
+
 			printg(statmsg);
+
+			if (usecolors)
+				attroff(COLOR_PAIR(COLORLOW));
+
 			statmsg = NULL;
 		}
 		else
@@ -554,13 +695,27 @@ generic_samp(time_t curtime, int nsecs,
 			if (flag&RRBOOT)
 			{
 				if (screen)
+				{
+					if (usecolors)
+						attron(COLOR_PAIR(COLORLOW));
 					attron(A_BLINK);
 
-       				printg("                *** system and "
-				       "process activity since boot ***");
+					printg("%*s", (COLS-45)/2, " ");
+				}
+				else
+				{
+					printg("                   ");
+				}
+
+       				printg("*** system and process activity "
+				       "since boot ***");
 
 				if (screen)
+				{
+					if (usecolors)
+						attroff(COLOR_PAIR(COLORLOW));
 					attroff(A_BLINK);
+				}
 			}
 		}
 
@@ -581,6 +736,7 @@ generic_samp(time_t curtime, int nsecs,
 			*/
 			save_pstat = pstat;
 			save_nact  = nact;
+			cursel 	   = &emptysel;
 
 			/*
 			** allocate space for new (temporary) list with
@@ -597,10 +753,13 @@ generic_samp(time_t curtime, int nsecs,
 			   case MCUMUSER:
 				nact = cumusers(save_pstat, pstat, save_nact);
 				break;
+
 			   case MCUMPROC:
 				nact = cumprocs(save_pstat, pstat, save_nact);
 				break;
 			}
+
+			lastorder = 0;	/* force new sort */
 
 			if (screen)
 				plistsz = LINES-curline-2;
@@ -619,11 +778,18 @@ generic_samp(time_t curtime, int nsecs,
 
 		if (nact > 0 && plistsz > 0)
 		{
-			qsort(pstat, nact, sizeof(struct pstat),
-						procsort[(int)curorder]);
+			if (lastorder != curorder)
+			{
+				qsort(pstat, nact, sizeof(struct pstat),
+						procsort[(int)curorder&0x1f]);
 
-			if (screen)
+				lastorder = curorder;
+			}
+
+			if (screen) {
 				attron(A_REVERSE);
+                                move(curline+1, 0);
+                        }
 
 			/*
 			** print the header
@@ -645,7 +811,7 @@ generic_samp(time_t curtime, int nsecs,
 			*/
 			priproc(pstat, firstproc, nact, curline+2,
 			        firstproc/plistsz+1, (nact-1)/plistsz+1,
-			        showtype, curorder, &syscap, &procsel,
+			        showtype, curorder, &syscap, cursel,
 				nsecs, avgval);
 		}
 
@@ -659,8 +825,9 @@ generic_samp(time_t curtime, int nsecs,
 		{
 			free(pstat);
 
-			pstat = save_pstat;
-			nact  = save_nact;
+			pstat  = save_pstat;
+			nact   = save_nact;
+			cursel = &procsel;
 		}
 
 		/*
@@ -674,7 +841,7 @@ generic_samp(time_t curtime, int nsecs,
 			*/
 			if (paused)
 			{
-				move(statline, 73);
+				move(statline, COLS-6);
 				attron(A_BLINK);
 				attron(A_REVERSE);
 				printw("PAUSED");
@@ -729,6 +896,42 @@ generic_samp(time_t curtime, int nsecs,
 					break;
 
 				return lastchar;
+
+                           /*
+			   ** branch to certain time stamp
+                           */
+                           case MSAMPBRANCH:
+                                if (!rawreadflag)
+                                {
+                                        statmsg = "Only allowed when viewing "
+                                                  "raw file!";
+                                        beep();
+                                        break;
+                                }
+
+                                if (paused)
+                                        break;
+
+                                echo();
+                                move(statline, 0);
+                                clrtoeol();
+                                printw("Enter new time (format hh:mm): ");
+
+                                hhmm[0] = '\0';
+                                scanw("%15s\n", hhmm);
+                                noecho();
+
+                                if ( !hhmm2secs(hhmm, &begintime) )
+                                {
+                                        move(statline, 0);
+                                        clrtoeol();
+                                        statmsg = "Wrong time format!";
+                                        beep();
+                                        begintime = 0;
+                                        break;
+                                }
+
+                                return lastchar;
 
 			   /*
 			   ** sort order automatically depending on
@@ -787,6 +990,9 @@ generic_samp(time_t curtime, int nsecs,
 			   ** general figures per process
 			   */
 			   case MPROCGEN:
+				if (showtype ==MCUMUSER || showtype ==MCUMPROC)
+					lastorder = 0;	/* force new sort */
+
 				showtype  = MPROCGEN;
 
 				if (showorder != MSORTAUTO)
@@ -799,6 +1005,9 @@ generic_samp(time_t curtime, int nsecs,
 			   ** memory-specific figures per process
 			   */
 			   case MPROCMEM:
+				if (showtype ==MCUMUSER || showtype ==MCUMPROC)
+					lastorder = 0;	/* force new sort */
+
 				showtype  = MPROCMEM;
 
 				if (showorder != MSORTAUTO)
@@ -817,6 +1026,10 @@ generic_samp(time_t curtime, int nsecs,
 					          "available; request ignored!";
 					break;
 				}
+
+				if (showtype ==MCUMUSER || showtype ==MCUMPROC)
+					lastorder = 0;	/* force new sort */
+
 				showtype  = MPROCDSK;
 
 				if (showorder != MSORTAUTO)
@@ -835,6 +1048,10 @@ generic_samp(time_t curtime, int nsecs,
 					          "request ignored!";
 					break;
 				}
+
+				if (showtype ==MCUMUSER || showtype ==MCUMPROC)
+					lastorder = 0;	/* force new sort */
+
 				showtype  = MPROCNET;
 
 				if (showorder != MSORTAUTO)
@@ -847,6 +1064,9 @@ generic_samp(time_t curtime, int nsecs,
 			   ** various info per process
 			   */
 			   case MPROCVAR:
+				if (showtype ==MCUMUSER || showtype ==MCUMPROC)
+					lastorder = 0;	/* force new sort */
+
 				showtype  = MPROCVAR;
 				firstproc = 0;
 				break;
@@ -855,7 +1075,29 @@ generic_samp(time_t curtime, int nsecs,
 			   ** command-line per process
 			   */
 			   case MPROCARG:
+				if (showtype ==MCUMUSER || showtype ==MCUMPROC)
+					lastorder = 0;	/* force new sort */
+
 				showtype  = MPROCARG;
+				firstproc = 0;
+				break;
+
+			   /*
+			   ** own defined output per process
+			   */
+			   case MPROCOWN:
+				if (! ownprocs[0].f)
+				{
+					statmsg = "Own process line is not "
+					          "configured in rc-file; "
+					          "request ignored";
+					break;
+				}
+
+				if (showtype ==MCUMUSER || showtype ==MCUMPROC)
+					lastorder = 0;	/* force new sort */
+
+				showtype  = MPROCOWN;
 				firstproc = 0;
 				break;
 
@@ -863,6 +1105,9 @@ generic_samp(time_t curtime, int nsecs,
 			   ** scheduling-values per process
 			   */
 			   case MPROCSCH:
+				if (showtype ==MCUMUSER || showtype ==MCUMPROC)
+					lastorder = 0;	/* force new sort */
+
 				showtype  = MPROCSCH;
 
 				if (showorder != MSORTAUTO)
@@ -878,6 +1123,9 @@ generic_samp(time_t curtime, int nsecs,
 				statmsg = "Consumption per user; use 'a' to "
 				          "toggle between all/active processes";
 
+				if (showtype != MCUMUSER)
+					lastorder = 0;	/* force new sort */
+
 				showtype  = MCUMUSER;
 				firstproc = 0;
 				break;
@@ -888,6 +1136,9 @@ generic_samp(time_t curtime, int nsecs,
 			   case MCUMPROC:
 				statmsg = "Consumption per program; use 'a' to "
 				          "toggle between all/active processes";
+
+				if (showtype != MCUMPROC)
+					lastorder = 0;	/* force new sort */
 
 				showtype  = MCUMPROC;
 				firstproc = 0;
@@ -1246,6 +1497,22 @@ generic_samp(time_t curtime, int nsecs,
 				            "statistics (now %d): ",
 				            maxcpulines, statline);
 
+				if (sstat->dsk.nlvm > 0)
+				{
+					maxlvmlines =
+					  getnumval("Maximum lines for LVM "
+				            "statistics (now %d): ",
+				            maxlvmlines, statline);
+				}
+
+				if (sstat->dsk.nmdd > 0)
+				{
+			  		maxmddlines =
+					  getnumval("Maximum lines for MD "
+					    "device statistics (now %d): ",
+				            maxmddlines, statline);
+				}
+
 				maxdsklines =
 				  getnumval("Maximum lines for disk "
 				            "statistics (now %d): ",
@@ -1278,7 +1545,14 @@ generic_samp(time_t curtime, int nsecs,
 				break;
 
 			   /*
-			   ** handle forward
+			   ** handle redraw request
+			   */
+			   case MREDRAW:
+                                wclear(stdscr);
+				break;
+
+			   /*
+			   ** handle backward
 			   */
 			   case MLISTFW:
 				if (alistsz-firstproc > plistsz)
@@ -1332,6 +1606,9 @@ cumusers(struct pstat *curprocs, struct pstat *curusers, int numprocs)
 	*/
 	for (numusers=i=0; i < numprocs; i++, curprocs++)
 	{
+		if (procsuppress(curprocs, &procsel))
+			continue;
+
 		if ( curusers->gen.ruid != curprocs->gen.ruid )
 		{
 			if (curusers->gen.pid)
@@ -1348,6 +1625,9 @@ cumusers(struct pstat *curprocs, struct pstat *curusers, int numprocs)
 		curusers->cpu.utime  += curprocs->cpu.utime;
 		curusers->cpu.stime  += curprocs->cpu.stime;
 
+		curusers->dsk.rsz    += curprocs->dsk.rsz;
+		curusers->dsk.wsz    += curprocs->dsk.wsz;
+			
 		curusers->dsk.rio    += curprocs->dsk.rio;
 		curusers->dsk.wio    += curprocs->dsk.wio;
 			
@@ -1392,6 +1672,9 @@ cumprocs(struct pstat *curprocs, struct pstat *curprogs, int numprocs)
 	*/
 	for (numprogs=i=0; i < numprocs; i++, curprocs++)
 	{
+		if (procsuppress(curprocs, &procsel))
+			continue;
+
 		if ( strcmp(curprogs->gen.name, curprocs->gen.name) != 0)
 		{
 			if (curprogs->gen.pid)
@@ -1410,6 +1693,9 @@ cumprocs(struct pstat *curprocs, struct pstat *curprogs, int numprocs)
 
 		curprogs->dsk.rio    += curprocs->dsk.rio;
 		curprogs->dsk.wio    += curprocs->dsk.wio;
+			
+		curprogs->dsk.rsz    += curprocs->dsk.rsz;
+		curprogs->dsk.wsz    += curprocs->dsk.wsz;
 			
 		curprogs->net.tcpsnd += curprocs->net.tcpsnd;
 		curprogs->net.tcprcv += curprocs->net.tcprcv;
@@ -1431,6 +1717,16 @@ cumprocs(struct pstat *curprocs, struct pstat *curprogs, int numprocs)
 		numprogs++;
 
 	return numprogs;
+}
+
+static void
+limitedlines(void)
+{
+	maxcpulines = 0;
+	maxdsklines = 3;
+	maxmddlines = 4;
+	maxlvmlines = 5;
+	maxintlines = 3;
 }
 
 /*
@@ -1512,47 +1808,55 @@ static struct helptext {
 	{"\t'%c' - various info (ppid, user/group, date/time, status, "
 	 "exitcode)\n",	MPROCVAR},
 	{"\t'%c' - full command-line per process\n",		MPROCARG},
+	{"\t'%c' - use own output line definition\n",		MPROCOWN},
 	{"\n",							' '},
-	{"Accumulated figures:\n",				' '},
-	{"\t'%c' - total resource consumption per user\n", 	MCUMUSER},
-	{"\t'%c' - total resource consumption per program (i.e. same "
-	 "process name)\n",					MCUMPROC},
-	{"\n",							' '},
-	{"Sort list of active processes in order of:\n",	' '},
+	{"Sort list of processes in order of:\n",		' '},
 	{"\t'%c' - cpu activity\n",				MSORTCPU},
 	{"\t'%c' - memory consumption\n",			MSORTMEM},
 	{"\t'%c' - disk activity\n",				MSORTDSK},
 	{"\t'%c' - network activity\n",				MSORTNET},
 	{"\t'%c' - most active system resource (auto mode)\n",	MSORTAUTO},
 	{"\n",							' '},
-	{"Screen-handling:\n",					' '},
-	{"\t^F  - show next     page in the process-list (forward)\n",	' '},
-	{"\t^B  - show previous page in the process-list (backward)\n", ' '},
+	{"Accumulated figures:\n",				' '},
+	{"\t'%c' - total resource consumption per user\n", 	MCUMUSER},
+	{"\t'%c' - total resource consumption per program (i.e. same "
+	 "process name)\n",					MCUMPROC},
 	{"\n",							' '},
-	{"Miscellaneous commands:\n",				' '},
-	{"\t'%c' - change interval-timer (0 = only manual trigger)\n",
-								MINTERVAL},
-	{"\t'%c' - manual trigger to finish interval\n",	MSAMPNEXT},
-	{"\t'%c' - show previous interval again (raw file viewing)\n",
-								MSAMPPREV},
-	{"\t'%c' - reset counters to zero (or rewind for raw file viewing)\n",
-								MRESET},
-	{"\n",							' '},
+	{"Selections:\n",					' '},
 	{"\t'%c' - focus on specific user name    (regular expression)\n",
 								MSELUSER},
 	{"\t'%c' - focus on specific process name (regular expression)\n",
 								MSELPROC},
 	{"\n",							' '},
-	{"\t'%c' - active processes only (default) or all processes (toggle)\n",
+	{"Screen-handling:\n",					' '},
+	{"\t^L  - redraw the screen                       \n",	' '},
+	{"\t^F  - show next     page in the process-list (forward)\n",	' '},
+	{"\t^B  - show previous page in the process-list (backward)\n", ' '},
+	{"\n",							' '},
+	{"Presentation (these keys are shown in the header line):\n",	' '},
+	{"\t'%c' - show all processes (default: active processes)   (toggle)\n",
 								MALLPROC},
-	{"\t'%c' - pause-button to freeze current sample            (toggle)\n",
-								MPAUSE},
 	{"\t'%c' - fixate on static range of header-lines           (toggle)\n",
 								MSYSFIXED},
-	{"\t'%c' - use colors to indicate high occupation           (toggle)\n",
+	{"\t'%c' - no colors to indicate high occupation            (toggle)\n",
 								MCOLORS},
 	{"\t'%c' - show average-per-second i.s.o. total values      (toggle)\n",
 								MAVGVAL},
+	{"\n",							' '},
+	{"Raw file viewing:\n",					' '},
+	{"\t'%c' - show next     sample in raw file\n",		MSAMPNEXT},
+	{"\t'%c' - show previous sample in raw file\n",		MSAMPPREV},
+	{"\t'%c' - branch to certain time in raw file)\n",	MSAMPBRANCH},
+	{"\t'%c' - rewind to begin of raw file)\n",		MRESET},
+	{"\n",							' '},
+	{"Miscellaneous commands:\n",				' '},
+	{"\t'%c' - change interval-timer (0 = only manual trigger)\n",
+								MINTERVAL},
+	{"\t'%c' - manual trigger to force next sample\n",	MSAMPNEXT},
+	{"\t'%c' - reset counters to boot time values\n",	MRESET},
+	{"\t'%c' - pause-button to freeze current sample (toggle)\n",
+								MPAUSE},
+	{"\n",							' '},
 	{"\t'%c' - limited lines for per-cpu, disk and interface resources\n",
 								MSYSLIMIT},
 	{"\t'%c' - kill a process (i.e. send a signal)\n",	MKILLPROC},
@@ -1662,6 +1966,8 @@ generic_usage(void)
 	                 "date/time)\n", MPROCVAR);
 	printf("\t  -%c  show command-line per process\n",
 			MPROCARG);
+	printf("\t  -%c  show own defined process-info\n",
+			MPROCOWN);
 	printf("\t  -%c  show cumulated process-info per user\n",
 			MCUMUSER);
 	printf("\t  -%c  show cumulated process-info per program "
@@ -1682,10 +1988,10 @@ generic_usage(void)
 }
 
 /*
-** functions to handle a particular tag in the .atoprc file
+** functions to handle a particular tag in the /etc/atoprc and .atoprc file
 */
 void
-do_username(char *val)
+do_username(char *name, char *val)
 {
 	struct passwd	*pwd;
 
@@ -1700,8 +2006,8 @@ do_username(char *val)
 		if (regcomp(&userregex, procsel.username, REG_NOSUB))
 		{
 			fprintf(stderr,
-				".atoprc: invalid regular expression %s\n",
-				val);
+				"atoprc - %s: invalid regular expression %s\n",
+				name, val);
 			exit(1);
 		}
 
@@ -1733,8 +2039,8 @@ do_username(char *val)
 			else
 			{
 				fprintf(stderr,
-			       		".atoprc: user-names matching %s do "
-					"not exist\n", val);
+			       		"atoprc - %s: user-names matching %s "
+                                        "do not exist\n", name, val);
 				exit(1);
 			}
 		}
@@ -1746,7 +2052,7 @@ do_username(char *val)
 }
 
 void
-do_procname(char *val)
+do_procname(char *name, char *val)
 {
 	strncpy(procsel.procname, val, sizeof procsel.procname -1);
 	procsel.procnamesz = strlen(procsel.procname);
@@ -1756,57 +2062,48 @@ do_procname(char *val)
 		if (regcomp(&procsel.procregex, procsel.procname, REG_NOSUB))
 		{
 			fprintf(stderr,
-				".atoprc: invalid regular expression %s\n",
-				val);
+				"atoprc - %s: invalid regular expression %s\n",
+				name, val);
 			exit(1);
 		}
 	}
 }
 
+extern int get_posval(char *name, char *val);
+
+
 void
-do_maxcpu(char *val)
+do_maxcpu(char *name, char *val)
 {
-	if (numeric(val))
-	{
-		maxcpulines = atoi(val);
-	}
-	else
-	{
-		fprintf(stderr, ".atoprc: maxcpu value not numeric\n");
-		exit(1);
-	}
+	maxcpulines = get_posval(name, val);
 }
 
 void
-do_maxdisk(char *val)
+do_maxdisk(char *name, char *val)
 {
-	if (numeric(val))
-	{
-		maxdsklines = atoi(val);
-	}
-	else
-	{
-		fprintf(stderr, ".atoprc: maxdisk value not numeric\n");
-		exit(1);
-	}
+	maxdsklines = get_posval(name, val);
 }
 
 void
-do_maxintf(char *val)
+do_maxmdd(char *name, char *val)
 {
-	if (numeric(val))
-	{
-		maxintlines = atoi(val);
-	}
-	else
-	{
-		fprintf(stderr, ".atoprc: maxintf value not numeric\n");
-		exit(1);
-	}
+	maxmddlines = get_posval(name, val);
 }
 
 void
-do_flags(char *val)
+do_maxlvm(char *name, char *val)
+{
+	maxlvmlines = get_posval(name, val);
+}
+
+void
+do_maxintf(char *name, char *val)
+{
+	maxintlines = get_posval(name, val);
+}
+
+void
+do_flags(char *name, char *val)
 {
 	int	i;
 
@@ -1868,6 +2165,10 @@ do_flags(char *val)
 
 		   case MPROCARG:
 			showtype  = MPROCARG;
+			break;
+
+		   case MPROCOWN:
+			showtype  = MPROCOWN;
 			break;
 
 		   case MCUMUSER:

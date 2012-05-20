@@ -31,11 +31,23 @@ case "$1" in
 	#
 	if [ -e $PIDFILE ] && ps -p `cat $PIDFILE` | grep 'atop$' > /dev/null
 	then
-		kill -USR1 `cat $PIDFILE` 	# take final sample
-		sleep 3
-		kill -TERM `cat $PIDFILE`
+		kill -USR2 `cat $PIDFILE`	# final sample and terminate
+
+		CNT=0
+
+		while ps -p `cat $PIDFILE` > /dev/null
+		do
+			let CNT+=1
+
+			if [ $CNT -gt 5 ]
+			then
+				break;
+			fi
+
+			sleep 1
+		done
+
 		rm $PIDFILE
-		sleep 1
 	fi
 	;;
 

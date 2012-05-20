@@ -5,11 +5,11 @@
 ** the system on system-level as well as process-level.
 **
 ** ==========================================================================
-** Author:      Gerlof Langeveld - AT Computing, Nijmegen, Holland
-** E-mail:      gerlof@ATComputing.nl
+** Author:      Gerlof Langeveld
+** E-mail:      gerlof.langeveld@atoptool.nl
 ** Date:        January 2007
 ** --------------------------------------------------------------------------
-** Copyright (C) 2007 Gerlof Langeveld
+** Copyright (C) 2007-2010 Gerlof Langeveld
 **
 ** This program is free software; you can redistribute it and/or modify it
 ** under the terms of the GNU General Public License as published by the
@@ -26,8 +26,11 @@
 ** Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
 ** --------------------------------------------------------------------------
 **
-** $Id: ifprop.c,v 1.4 2007/02/13 10:34:06 gerlof Exp $
+** $Id: ifprop.c,v 1.5 2010/04/23 12:19:35 gerlof Exp $
 ** $Log: ifprop.c,v $
+** Revision 1.5  2010/04/23 12:19:35  gerlof
+** Modified mail-address in header.
+**
 ** Revision 1.4  2007/02/13 10:34:06  gerlof
 ** Removal of external declarations.
 **

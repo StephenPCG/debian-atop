@@ -6,8 +6,8 @@
 **
 ** Include-file describing system-level counters maintained.
 ** ================================================================
-** Author:      Gerlof Langeveld - AT Computing, Nijmegen, Holland
-** E-mail:      gerlof@ATComputing.nl
+** Author:      Gerlof Langeveld
+** E-mail:      gerlof.langeveld@atoptool.nl
 ** Date:        November 1996
 ** LINUX-port:  June 2000
 **
@@ -24,7 +24,9 @@
 #include "netstats.h"
 
 #define	MAXCPU		64
-#define	MAXDSK		128
+#define	MAXDSK		256
+#define	MAXLVM		256
+#define	MAXMDD		128
 #define	MAXDKNAM	32
 #define	MAXINTF		32
 
@@ -36,16 +38,18 @@ struct	memstat {
 	count_t	buffermem;	/* number of buffer   pages	*/
 	count_t	slabmem;	/* number of slab     pages	*/
 	count_t	cachemem;	/* number of cache    pages	*/
-	count_t	committed;	/* number of reserved pages	*/
-
-	count_t	swouts;		/* number of pages swapped out	*/
-	count_t	swins;		/* number of pages swapped in	*/
+	count_t	cachedrt;	/* number of cache    pages (dirty)	*/
 
 	count_t	totswap;	/* number of pages in swap	*/
 	count_t	freeswap;	/* number of free swap pages	*/
+
 	count_t	pgscans;	/* number of page scans		*/
-	count_t	commitlim;	/* commit limit in pages	*/
 	count_t	allocstall;	/* try to free pages forced	*/
+	count_t	swouts;		/* number of pages swapped out	*/
+	count_t	swins;		/* number of pages swapped in	*/
+
+	count_t	commitlim;	/* commit limit in pages	*/
+	count_t	committed;	/* number of reserved pages	*/
 	count_t	cfuture[4];	/* reserved for future use	*/
 };
 
@@ -65,17 +69,26 @@ struct	netstat {
 
 /************************************************************************/
 
+struct freqcnt {
+        count_t maxfreq;/* frequency in MHz                    */
+        count_t cnt;    /* number of clock ticks times state   */
+        count_t ticks;  /* number of total clock ticks         */
+                        /* if zero, cnt is actul freq          */
+};
+
 struct percpu {
-	int	cpunr;
-	count_t	stime;	/* system  time in clock ticks		*/
-	count_t	utime;	/* user    time in clock ticks		*/
-	count_t	ntime;	/* nice    time in clock ticks		*/
-	count_t	itime;	/* idle    time in clock ticks		*/
-	count_t	wtime;	/* iowait  time in clock ticks		*/
-	count_t	Itime;	/* irq     time in clock ticks		*/
-	count_t	Stime;	/* softirq time in clock ticks		*/
-	count_t	steal;	/* steal   time in clock ticks		*/
-	count_t	cfuture[4];	/* reserved for future use	*/
+	int		cpunr;
+	count_t		stime;	/* system  time in clock ticks		*/
+	count_t		utime;	/* user    time in clock ticks		*/
+	count_t		ntime;	/* nice    time in clock ticks		*/
+	count_t		itime;	/* idle    time in clock ticks		*/
+	count_t		wtime;	/* iowait  time in clock ticks		*/
+	count_t		Itime;	/* irq     time in clock ticks		*/
+	count_t		Stime;	/* softirq time in clock ticks		*/
+	count_t		steal;	/* steal   time in clock ticks		*/
+	count_t		guest;	/* guest   time in clock ticks		*/
+        struct freqcnt	freqcnt;/* frequency scaling info  		*/
+	count_t		cfuture[1];	/* reserved for future use	*/
 };
 
 struct	cpustat {
@@ -94,7 +107,7 @@ struct	cpustat {
 
 /************************************************************************/
 
-struct	perxdsk {
+struct	perdsk {
         char	name[MAXDKNAM];	/* empty string for last        */
         count_t	nread;	/* number of read  transfers            */
         count_t	nrsect;	/* number of sectors read               */
@@ -105,9 +118,13 @@ struct	perxdsk {
 	count_t	cfuture[4];	/* reserved for future use	*/
 };
 
-struct xdskstat {
-	int		nrxdsk;
-	struct perxdsk	xdsk[MAXDSK];
+struct dskstat {
+	int		ndsk;	/* number of physical disks	*/
+	int		nmdd;	/* number of md volumes		*/
+	int		nlvm;	/* number of logical volumes	*/
+	struct perdsk	dsk[MAXDSK];
+	struct perdsk	mdd[MAXMDD];
+	struct perdsk	lvm[MAXLVM];
 };
 
 /************************************************************************/
@@ -169,7 +186,7 @@ struct	sstat {
 	struct memstat	mem;
 	struct netstat	net;
 	struct intfstat	intf;
-	struct xdskstat xdsk;
+	struct dskstat  dsk;
 
 	struct wwwstat	www;
 };
