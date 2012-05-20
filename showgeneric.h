@@ -7,8 +7,8 @@
 ** Include-file describing prototypes and structures for visualization
 ** of counters.
 ** ================================================================
-** Author:      Gerlof Langeveld - AT Computing, Nijmegen, Holland
-** E-mail:      gerlof@ATComputing.nl
+** Author:      Gerlof Langeveld
+** E-mail:      gerlof.langeveld@atoptool.nl
 ** Date:        July 2002
 **
 ** This program is free software; you can redistribute it and/or modify it
@@ -58,6 +58,7 @@ struct selection {
 #define	MPROCSCH	's'
 #define	MPROCVAR	'v'
 #define	MPROCARG	'c'
+#define MPROCOWN	'o'
 
 #define	MCUMUSER	'u'
 #define	MCUMPROC	'p'
@@ -79,12 +80,14 @@ struct selection {
 #define	MKILLPROC	'k'
 #define	MLISTFW		0x06
 #define	MLISTBW		0x02
+#define MREDRAW         0x0c
 #define	MINTERVAL	'i'
 #define	MPAUSE		'z'
 #define	MQUIT		'q'
 #define	MRESET		'r'
 #define	MSAMPNEXT	't'
 #define	MSAMPPREV	'T'
+#define	MSAMPBRANCH	'b'
 #define	MVERSION	'V'
 #define	MAVGVAL		'1'
 #define	MHELP1		'?'
@@ -94,7 +97,8 @@ struct selection {
 ** general function prototypes
 */
 void	totalcap   (struct syscap *, struct sstat *, struct pstat *, int);
-void	pricumproc (struct pstat *, int, int, int, int, int, int);
+void	pricumproc (struct pstat *,  struct sstat *, int, int, int, int, 
+             				   	int, int, int, int, int);
 
 void	showgenproc(struct pstat *, double, int, int);
 void	showmemproc(struct pstat *, double, int, int);
@@ -107,7 +111,7 @@ void	showcmdproc(struct pstat *, double, int, int);
 
 void	printg     (const char *, ...);
 int	prisyst(struct sstat  *, int, int, int, int, int, char *,
-                int, int, int);
+                int, int, int, int, int);
 int	priproc(struct pstat  *, int, int, int, int, int, char, char,
 	        struct syscap *, struct selection *, int, int);
 void	priphead(int, int, char, char, char);

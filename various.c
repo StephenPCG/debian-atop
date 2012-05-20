@@ -7,12 +7,12 @@
 ** This source-file contains various functions to a.o. format the
 ** time-of-day, the cpu-time consumption and the memory-occupation. 
 ** ==========================================================================
-** Author:      Gerlof Langeveld - AT Computing, Nijmegen, Holland
-** E-mail:      gerlof@ATComputing.nl
+** Author:      Gerlof Langeveld
+** E-mail:      gerlof.langeveld@atoptool.nl
 ** Date:        November 1996
 ** LINUX-port:  June 2000
 ** --------------------------------------------------------------------------
-** Copyright (C) 2000-2005 Gerlof Langeveld
+** Copyright (C) 2000-2010 Gerlof Langeveld
 **
 ** This program is free software; you can redistribute it and/or modify it
 ** under the terms of the GNU General Public License as published by the
@@ -30,6 +30,28 @@
 ** --------------------------------------------------------------------------
 **
 ** $Log: various.c,v $
+** Revision 1.21  2010/11/12 06:16:16  gerlof
+** Show all parts of timestamp in header line, even when zero.
+**
+** Revision 1.20  2010/05/18 19:21:08  gerlof
+** Introduce CPU frequency and scaling (JC van Winkel).
+**
+** Revision 1.19  2010/04/28 18:21:11  gerlof
+** Cast value larger than 4GB to long long.
+**
+** Revision 1.18  2010/04/23 12:19:35  gerlof
+** Modified mail-address in header.
+**
+** Revision 1.17  2010/03/26 11:52:45  gerlof
+** Introduced unit of Tbytes for memory-usage.
+**
+** Revision 1.16  2009/12/17 08:28:38  gerlof
+** Express CPU-time usage in days and hours for large values.
+**
+** Revision 1.15  2009/12/10 08:50:39  gerlof
+** Introduction of a new function to convert number of seconds
+** to a string indicating days, hours, minutes and seconds.
+**
 ** Revision 1.14  2007/02/13 10:32:47  gerlof
 ** Removal of external declarations.
 ** Removal of function getpagesz().
@@ -76,7 +98,7 @@
 **
 */
 
-static const char rcsid[] = "$Id: various.c,v 1.14 2007/02/13 10:32:47 gerlof Exp $";
+static const char rcsid[] = "$Id: various.c,v 1.21 2010/11/12 06:16:16 gerlof Exp $";
 
 #include <sys/types.h>
 #include <sys/param.h>
@@ -241,6 +263,52 @@ val2valstr(count_t value, char *strvalue, int width, int avg, int nsecs)
 	return strvalue;
 }
 
+#define DAYSECS 	(24*60*60)
+#define HOURSECS	(60*60)
+#define MINSECS 	(60)
+
+/*
+** Function val2elapstr() converts a value (number of seconds)
+** to an ascii-string of up to max 13 positions in NNNdNNhNNmNNs
+** stored in strvalue (at least 14 positions).
+** returnvalue: number of bytes stored
+*/
+int
+val2elapstr(int value, char *strvalue)
+{
+        char	*p=strvalue, doshow=0;
+
+        if (value > DAYSECS) 
+        {
+                p+=sprintf(p, "%dd", value/DAYSECS);
+                value %= DAYSECS;
+		doshow = 1;
+        }
+
+        if (value > HOURSECS || doshow) 
+        {
+                p+=sprintf(p, "%dh", value/HOURSECS);
+                value %= HOURSECS;
+		doshow = 1;
+        }
+
+        if (value > MINSECS || doshow) 
+        {
+                p+=sprintf(p, "%dm", value/MINSECS);
+                value %= MINSECS;
+		doshow = 1;
+        }
+
+        if (value || doshow) 
+        {
+                p+=sprintf(p, "%ds", value);
+		doshow = 1;
+        }
+
+        return p-strvalue;
+}
+
+
 /*
 ** Function val2cpustr() converts a value (number of milliseconds)
 ** to an ascii-string of 7 positions in milliseconds or minute-seconds or
@@ -248,6 +316,7 @@ val2valstr(count_t value, char *strvalue, int width, int avg, int nsecs)
 */
 #define	MAXMSEC		(count_t)100000
 #define	MAXSEC		(count_t)60000
+#define	MAXMIN		(count_t)60000
 
 char *
 val2cpustr(count_t value, char *strvalue)
@@ -258,14 +327,14 @@ val2cpustr(count_t value, char *strvalue)
 	}
 	else
 	{
-		/*
-		** millisecs irrelevant; round to seconds
-		*/
-		value = (value + 500) / 1000;
+	        /*
+       	 	** millisecs irrelevant; round to seconds
+       	 	*/
+        	value = (value + 500) / 1000;
 
-		if (value < MAXSEC) 
-		{
-			sprintf(strvalue, "%3lldm%02llds", value/60, value%60);
+        	if (value < MAXSEC) 
+        	{
+               	 	sprintf(strvalue, "%3lldm%02llds", value/60, value%60);
 		}
 		else
 		{
@@ -274,10 +343,52 @@ val2cpustr(count_t value, char *strvalue)
 			*/
 			value = (value + 30) / 60;
 
-			sprintf(strvalue, "%3lldh%02lldm", value/60, value%60);
+			if (value < MAXMIN) 
+			{
+				sprintf(strvalue, "%3lldh%02lldm",
+							value/60, value%60);
+			}
+			else
+			{
+				/*
+				** minutes irrelevant; round to hours
+				*/
+				value = (value + 30) / 60;
+
+				sprintf(strvalue, "%3lldd%02lldh",
+						value/24, value%24);
+			}
 		}
 	}
 
+	return strvalue;
+}
+
+/*
+** Function val2Hzstr() converts a value (in MHz) 
+** to an ascii-string.
+** The result-string is placed in the area pointed to strvalue,
+** which should be able to contain at least 8 positions.
+*/
+char *
+val2Hzstr(count_t value, char *strvalue)
+{
+        if (value < 1000)
+        {
+                sprintf(strvalue, "%4lldMHz", value);
+        }
+        else
+        {
+                double fval=value/1000.0;      // fval is double in GHz
+                char prefix='G';
+
+                if (fval >= 1000.0)            // prepare for the future
+                {
+                        prefix='T';        
+                        fval /= 1000.0;
+                }
+                sprintf(strvalue, "%4.2f%cHz", fval, prefix);
+        }
 	return strvalue;
 }
 
@@ -291,10 +402,12 @@ val2cpustr(count_t value, char *strvalue)
 #define	ONEKBYTE	1024
 #define	ONEMBYTE	1048576
 #define	ONEGBYTE	1073741824L
+#define	ONETBYTE	1099511627776LL
 
 #define	MAXBYTE		1024
 #define	MAXKBYTE	ONEKBYTE*99999L
 #define	MAXMBYTE	ONEMBYTE*999L
+#define	MAXGBYTE	ONEGBYTE*999LL
 
 char *
 val2memstr(count_t value, char *strvalue, int pformat, int avgval, int nsecs)
@@ -338,7 +451,10 @@ val2memstr(count_t value, char *strvalue, int pformat, int avgval, int nsecs)
 			if (verifyval <= MAXMBYTE)	/* mbytes ? */
 				aformat = MBFORMAT;
 			else
-				aformat = GBFORMAT;
+				if (verifyval <= MAXGBYTE)	/* mbytes ? */
+					aformat = GBFORMAT;
+				else
+					aformat = TBFORMAT;
 
 	/*
 	** check if this is also the preferred format
@@ -366,6 +482,11 @@ val2memstr(count_t value, char *strvalue, int pformat, int avgval, int nsecs)
 	   case	GBFORMAT:
 		sprintf(strvalue, "%*.1lfG%s",
 			basewidth-1, (double)((double)value/ONEGBYTE), suffix);
+		break;
+
+	   case	TBFORMAT:
+		sprintf(strvalue, "%*.1lfT%s",
+			basewidth-1, (double)((double)value/ONETBYTE), suffix);
 		break;
 
 	   default:

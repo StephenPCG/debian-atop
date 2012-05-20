@@ -11,13 +11,13 @@
 ** process-level counters and the deviations are calculated and
 ** visualized for the user.
 ** ==========================================================================
-** Author:      Gerlof Langeveld - AT Computing, Nijmegen, Holland
-** E-mail:      gerlof@ATComputing.nl
+** Author:      Gerlof Langeveld
+** E-mail:      gerlof.langeveld@atoptool.nl
 ** Date:        November 1996
 ** Linux-port:  June 2000
 ** Modified: 	May 2001 - Ported to kernel 2.4
 ** --------------------------------------------------------------------------
-** Copyright (C) 2000-2005 Gerlof Langeveld
+** Copyright (C) 2000-2010 Gerlof Langeveld
 **
 ** This program is free software; you can redistribute it and/or modify it
 ** under the terms of the GNU General Public License as published by the
@@ -115,6 +115,61 @@
 ** at runtime. 
 **
 ** $Log: atop.c,v $
+** Revision 1.49  2010/10/23 14:01:00  gerlof
+** Show counters for total number of running and sleep (S and D) threads.
+**
+** Revision 1.48  2010/10/23 08:18:15  gerlof
+** Catch signal SIGUSR2 to take a final sample and stop.
+** Needed for improved of suspend/hibernate.
+**
+** Revision 1.47  2010/04/23 12:20:19  gerlof
+** Modified mail-address in header.
+**
+** Revision 1.46  2010/04/23 09:57:28  gerlof
+** Version (flag -V) handled earlier after startup.
+**
+** Revision 1.45  2010/04/17 17:19:41  gerlof
+** Allow modifying the layout of the columns in the system lines.
+**
+** Revision 1.44  2010/04/16 13:00:23  gerlof
+** Automatically start another version of atop if the logfile to
+** be read has not been created by the current version.
+**
+** Revision 1.43  2010/03/04 10:51:10  gerlof
+** Support I/O-statistics on logical volumes and MD devices.
+**
+** Revision 1.42  2009/12/31 11:33:33  gerlof
+** Sanity-check to bypass kernel-bug showing 497 days of CPU-consumption.
+**
+** Revision 1.41  2009/12/17 10:51:31  gerlof
+** Allow own defined process line with key 'o' and a definition
+** in the atoprc file.
+**
+** Revision 1.40  2009/12/17 08:15:15  gerlof
+** Introduce branch-key to go to specific time in raw file.
+**
+** Revision 1.39  2009/12/10 13:34:32  gerlof
+** Cosmetical changes.
+**
+** Revision 1.38  2009/12/10 11:55:38  gerlof
+** Introduce -L flag for line length.
+**
+** Revision 1.37  2009/12/10 10:43:33  gerlof
+** Correct calculation of node name.
+**
+** Revision 1.36  2009/12/10 09:19:06  gerlof
+** Various changes related to redesign of user-interface.
+** Made by JC van Winkel.
+**
+** Revision 1.35  2009/11/27 15:11:55  gerlof
+** *** empty log message ***
+**
+** Revision 1.34  2009/11/27 15:07:25  gerlof
+** Give up root-priviliges at a earlier stage.
+**
+** Revision 1.33  2009/11/27 14:01:01  gerlof
+** Introduce system-wide configuration file /etc/atoprc
+**
 ** Revision 1.32  2008/01/07 10:16:13  gerlof
 ** Implement summaries for atopsar.
 **
@@ -216,7 +271,7 @@
 **
 */
 
-static const char rcsid[] = "$Id: atop.c,v 1.32 2008/01/07 10:16:13 gerlof Exp $";
+static const char rcsid[] = "$Id: atop.c,v 1.49 2010/10/23 14:01:00 gerlof Exp $";
 
 #include <sys/types.h>
 #include <sys/param.h>
@@ -243,7 +298,7 @@ static const char rcsid[] = "$Id: atop.c,v 1.32 2008/01/07 10:16:13 gerlof Exp $
 #include "showgeneric.h"
 #include "parseable.h"
 
-#define	allflags  "ab:cde:fghijklmnopqrstuvwxyz1ABCDEFGHIJKLMNOP:QRSTUVWXYZ"
+#define	allflags  "ab:cde:fghijklmnopqrstuvwxyz1ABCDEFGHIJKL:MNOP:QRSTUVWXYZ"
 #define	PROCCHUNK	50	/* process-entries for future expansion  */
 #define	MAXFL		64      /* maximum number of command-line flags  */
 
@@ -251,14 +306,17 @@ static const char rcsid[] = "$Id: atop.c,v 1.32 2008/01/07 10:16:13 gerlof Exp $
 ** declaration of global variables
 */
 struct utsname	utsname;
+int		utsnodenamelen;
 time_t 		pretime;	/* timing info				*/
 time_t 		curtime;	/* timing info				*/
 unsigned long	interval = 10;
 unsigned long 	sampcnt;
 char		screen;
+int		linelen  = 80;
 char		acctactive;	/* accounting active (boolean)		*/
 char		rawname[RAWNAMESZ];
 char		rawreadflag;
+unsigned int	begintime, endtime;
 char		flaglist[MAXFL];
 char		deviatonly  = 1;
 unsigned short	hertz;
@@ -268,6 +326,8 @@ int 		osvers;
 int 		ossub;
 
 int		supportflags;	/* supported features             	*/
+char		**argvp;
+
 
 struct visualize vis = {generic_samp, generic_error,
 			generic_end,  generic_usage};
@@ -278,38 +338,70 @@ struct visualize vis = {generic_samp, generic_error,
 static char		awaittrigger;	/* boolean: awaiting trigger */
 static unsigned int 	nsamples = 0xffffffff;
 static char		midnightflag;
-static unsigned int	begintime, endtime;
 
 /*
-** interpretation of defaults-file $HOME/.atop
+** interpretation of defaults-file /etc/atoprc and $HOME/.atop
 */
-void do_flags(char *);
-void do_interval(char *);
-void do_username(char *);
-void do_procname(char *);
-void do_maxcpu(char *);
-void do_maxdisk(char *);
-void do_maxintf(char *);
-void do_cpucritperc(char *);
-void do_memcritperc(char *);
-void do_swpcritperc(char *);
-void do_dskcritperc(char *);
-void do_netcritperc(char *);
-void do_swoutcritsec(char *);
-void do_almostcrit(char *);
-void do_atopsarflags(char *);
+static void		readrc(char *);
+
+void do_flags(char *, char *);
+void do_interval(char *, char *);
+void do_linelength(char *, char *);
+void do_username(char *, char *);
+void do_procname(char *, char *);
+void do_maxcpu(char *, char *);
+void do_maxdisk(char *, char *);
+void do_maxmdd(char *, char *);
+void do_maxlvm(char *, char *);
+void do_maxintf(char *, char *);
+void do_ownsysprcline(char *, char *);
+void do_ownallcpuline(char *, char *);
+void do_ownindivcpuline(char *, char *);
+void do_owncplline(char *, char *);
+void do_ownmemline(char *, char *);
+void do_ownswpline(char *, char *);
+void do_ownpagline(char *, char *);
+void do_owndskline(char *, char *);
+void do_ownnettransportline(char *, char *);
+void do_ownnetnetline(char *, char *);
+void do_ownnetinterfaceline(char *, char *);
+void do_ownprocline(char *, char *);
+void do_cpucritperc(char *, char *);
+void do_memcritperc(char *, char *);
+void do_swpcritperc(char *, char *);
+void do_dskcritperc(char *, char *);
+void do_netcritperc(char *, char *);
+void do_swoutcritsec(char *, char *);
+void do_almostcrit(char *, char *);
+void do_atopsarflags(char *, char *);
 
 static struct {
 	char	*tag;
-	void	(*func)(char *);
+	void	(*func)(char *, char *);
 } manrc[] = {
 	{	"flags",		do_flags		},
 	{	"interval",		do_interval		},
+	{	"linelen",		do_linelength		},
 	{	"username",		do_username		},
 	{	"procname",		do_procname		},
 	{	"maxlinecpu",		do_maxcpu		},
 	{	"maxlinedisk",		do_maxdisk		},
+	{	"maxlinemdd",		do_maxmdd		},
+	{	"maxlinelvm",		do_maxlvm		},
 	{	"maxlineintf",		do_maxintf		},
+	{	"ownallcpuline",	do_ownallcpuline	},
+	{	"ownonecpuline",	do_ownindivcpuline	},
+	{	"owncplline",		do_owncplline		},
+	{	"ownmemline",		do_ownmemline		},
+	{	"ownswpline",		do_ownswpline		},
+	{	"ownpagline",		do_ownpagline		},
+	{	"owndskline",		do_owndskline		},
+	{	"ownnettrline",		do_ownnettransportline	},
+	{	"ownnetnetline",	do_ownnetnetline	},
+	{	"ownnetifline",	        do_ownnetinterfaceline	},
+	{	"ownprocline",		do_ownprocline		},
+	{	"ownsysprcline",	do_ownsysprcline	},
+	{	"owndskline",	        do_owndskline		},
 	{	"cpucritperc",		do_cpucritperc		},
 	{	"memcritperc",		do_memcritperc		},
 	{	"swpcritperc",		do_swpcritperc		},
@@ -329,99 +421,34 @@ int
 main(int argc, char *argv[])
 {
 	register int	i;
-	int		c, nr, line=0;
+	int		c;
 	char		*p;
 	struct rlimit	rlim;
 
 	/*
-	** check if defaults-file $HOME/.atoprc present;
-	** if so, set defaults specified in this file
+	** since priviliged actions will be done later on, at this stage
+	** the root-priviliges are dropped by switching effective user-id
+	** to real user-id (security reasons)
 	*/
+	seteuid ( getuid() );
+
+	/*
+	** preserve command arguments to allow restart of other version
+	*/
+	argvp = argv;
+
+	/*
+	** read defaults-files /etc/atoprc en $HOME/.atoprc (if any)
+	*/
+	readrc("/etc/atoprc");
+
 	if ( (p = getenv("HOME")) )
 	{
 		char path[1024];
 
 		snprintf(path, sizeof path, "%s/.atoprc", p);
 
-		/*
-		** check if this file is readable with the user's
-		** *real uid/gid* with syscall access()
-		*/
-		if ( access(path, R_OK) == 0)
-		{
-			FILE	*fp;
-			char	linebuf[256], tagname[16], tagvalue[16];
-
-			fp = fopen(path, "r");
-
-			while ( fgets(linebuf, sizeof linebuf, fp) )
-			{
-				line++;
-
-				nr = sscanf(linebuf, "%15s %15s",
-							tagname, tagvalue);
-
-				switch (nr)
-				{
-				   case 0:
-					continue;
-
-				   case 1:
-					if (tagname[0] == '#')
-						continue;
-
-					fprintf(stderr,
-						"~/.atoprc: syntax error line "
-						"%d (no value specified)\n",
-						line);
-
-					cleanstop(1);
-					break;		/* not reached */
-
-				   default:
-					if (tagname[0] == '#')
-						continue;
-					
-					if (tagvalue[0] != '#')
-						break;
-
-					fprintf(stderr,
-						"~/.atoprc: syntax error line "
-						"%d (no value specified)\n",
-						line);
-
-					cleanstop(1);
-				}
-
-				/*
-				** tag name and tag value found
-				** try to recognize tag name
-				*/
-				for (i=0; i < sizeof manrc/sizeof manrc[0]; i++)
-				{
-					if ( strcmp(tagname, manrc[i].tag) ==0)
-					{
-						manrc[i].func(tagvalue);
-						break;
-					}
-				}
-
-				/*
-				** tag name not recognized
-				*/
-				if (i == sizeof manrc/sizeof manrc[0])
-				{
-					fprintf(stderr,
-						"~/.atoprc: syntax error line "
-						"%d (tag name %s not valid)\n",
-						line, tagname);
-
-					cleanstop(1);
-				}
-			}
-
-			fclose(fp);
-		}
+		readrc(path);
 	}
 
 	/*
@@ -433,9 +460,8 @@ main(int argc, char *argv[])
 	else
 		p = argv[0];
 
-	if ( strcmp(p, "atopsar") == 0)
+	if ( memcmp(p, "atopsar", 7) == 0)
 		return atopsar(argc, argv);
-
 
 	/* 
 	** interpret command-line arguments & flags 
@@ -457,6 +483,10 @@ main(int argc, char *argv[])
 			   case '?':		/* usage wanted ?             */
 				prusage(argv[0]);
 				break;
+
+			   case 'V':		/* version wanted ?           */
+				printf("%s\n", getstrvers());
+				exit(0);
 
 			   case 'w':		/* writing of raw data ?      */
 				if (optind >= argc)
@@ -499,6 +529,13 @@ main(int argc, char *argv[])
 				vis.show_samp = parseout;
 				break;
 
+                           case 'L':		/* line length                */
+				if ( !numeric(optarg) )
+					prusage(argv[0]);
+
+				linelen = atoi(optarg);
+				break;
+
 			   default:		/* gather other flags */
 				flaglist[i++] = c;
 			}
@@ -536,6 +573,8 @@ main(int argc, char *argv[])
 	if ( (p = strchr(utsname.nodename, '.')) )
 		*p = '\0';
 
+	utsnodenamelen = strlen(utsname.nodename);
+
 	sscanf(utsname.release, "%d.%d.%d", &osrel, &osvers, &ossub);
 
 	/*
@@ -549,8 +588,7 @@ main(int argc, char *argv[])
 	*/
 	if (rawreadflag)
 	{
-		seteuid( getuid() );
-		rawread(begintime, endtime);
+		rawread();
 		cleanstop(0);
 	}
 
@@ -558,6 +596,18 @@ main(int argc, char *argv[])
 	** determine start-time for gathering current statistics
 	*/
 	curtime = getboot();
+
+	/*
+	** catch signals for proper close-down
+	*/
+	signal(SIGHUP,  cleanstop);
+	signal(SIGTERM, cleanstop);
+
+	/*
+	** regain the root-priviliges that we dropped at the beginning
+	** to do some priviliged work
+	*/
+	seteuid(0);
 
 	/*
 	** lock ATOP in memory to get reliable samples (also when
@@ -578,12 +628,6 @@ main(int argc, char *argv[])
 	(void) nice(-20);
 
 	/*
-	** catch signals for proper close-down
-	*/
-	signal(SIGHUP,  cleanstop);
-	signal(SIGTERM, cleanstop);
-
-	/*
 	** switch-on the process-accounting mechanism to register the
 	** (remaining) resource-usage by processes which have finished
 	*/
@@ -599,7 +643,7 @@ main(int argc, char *argv[])
 	** need to keep running under root-priviliges, so switch
 	** effective user-id to real user-id
 	*/
-	seteuid ( getuid() );
+	seteuid( getuid() );
 
 	/*
 	** start the engine now .....
@@ -619,7 +663,7 @@ engine(void)
 {
 	struct sigaction 	sigact;
 	static time_t		timelimit;
-	void			getusr1(int);
+	void			getusr1(int), getusr2(int);
 
 	/*
 	** reserve space for system-level statistics
@@ -638,7 +682,8 @@ engine(void)
 	struct pstat		*curpexit;	/* exitted process list	*/
 	struct pstat		*devpstat;	/* deviation list	*/
 
-	int			npresent, nexit, n, nzombie;
+	int			npresent, nexit, n;
+	int			ntrun, ntslpi, ntslpu, nzombie;
 
 	/*
 	** initialization: allocate required memory dynamically
@@ -657,12 +702,16 @@ engine(void)
 	}
 
 	/*
-	** install the signal-handler for ALARM and SIGUSR1 (both triggers
+	** install the signal-handler for ALARM, USR1 and USR2 (triggers
 	* for the next sample)
 	*/
 	memset(&sigact, 0, sizeof sigact);
 	sigact.sa_handler = getusr1;
 	sigaction(SIGUSR1, &sigact, (struct sigaction *)0);
+
+	memset(&sigact, 0, sizeof sigact);
+	sigact.sa_handler = getusr2;
+	sigaction(SIGUSR2, &sigact, (struct sigaction *)0);
 
 	memset(&sigact, 0, sizeof sigact);
 	sigact.sa_handler = getalarm;
@@ -711,7 +760,7 @@ engine(void)
 
 		/*
 		** wait for alarm-signal to arrive (except first sample)
-		** or wait for SIGUSR1 in case of an interval of 0.
+		** or wait for SIGUSR1/SIGUSR2
 		*/
 		if (sampcnt > 0 && awaittrigger)
 			pause();
@@ -781,7 +830,8 @@ engine(void)
 		devpstat = malloc((npresent+nexit) * sizeof(struct pstat));
 
 		n = deviatproc(curpact, npresent, curpexit, nexit,
-					deviatonly, devpstat, &nzombie);
+				deviatonly, devpstat, devsstat,
+				&ntrun, &ntslpi, &ntslpu, &nzombie);
 
 		/*
 		** activate the installed print-function to visualize
@@ -790,7 +840,8 @@ engine(void)
 		lastcmd = (vis.show_samp)( curtime,
 				     curtime-pretime > 0 ? curtime-pretime : 1,
 		           	     devsstat, devpstat, n, npresent,
-		           	     nzombie, nexit, sampcnt==0);
+		                     ntrun, ntslpi, ntslpu, nzombie,
+		                     nexit, sampcnt==0);
 
 		/*
 		** release dynamically allocated memory
@@ -835,6 +886,8 @@ prusage(char *myname)
 	printf("\t  -%c  show or log all processes (i.s.o. active processes "
 	                "only)\n", MALLPROC);
 	printf("\t  -P  generate parseable output for specified label(s)\n");
+	printf("\t  -L  alternate line length (default 80) in case of "
+			"non-screen output\n");
 
 	(*vis.show_usage)();
 
@@ -842,6 +895,7 @@ prusage(char *myname)
 	printf("\tspecific flags for raw logfiles:\n");
 	printf("\t  -w  write raw data to   file (compressed)\n");
 	printf("\t  -r  read  raw data from file (compressed)\n");
+	printf("\t      special file: y[y...] for yesterday (repeated)\n");
 	printf("\t  -S  finish atop automatically before midnight "
 	                "(i.s.o. #samples)\n");
 	printf("\t  -b  begin showing data from specified time\n");
@@ -854,7 +908,6 @@ prusage(char *myname)
 	printf("forced manually by sending signal USR1"
 			" (kill -USR1 pid_atop)\n");
 	printf("or with the keystroke '%c' in interactive mode.\n", MSAMPNEXT);
-
 
 	cleanstop(1);
 }
@@ -881,18 +934,125 @@ getusr1(int sig)
 }
 
 /*
-** functions to handle a particular tag in the .atoprc file
+** handler for USR2-signal
 */
 void
-do_interval(char *val)
+getusr2(int sig)
 {
-	if (numeric(val))
+	awaittrigger=0;
+	nsamples = sampcnt;	// force stop after next sample
+}
+
+/*
+** functions to handle a particular tag in the .atoprc file
+*/
+extern int get_posval(char *name, char *val);
+
+void
+do_interval(char *name, char *val)
+{
+	interval = get_posval(name, val);
+}
+
+void
+do_linelength(char *name, char *val)
+{
+	linelen = get_posval(name, val);
+}
+
+/*
+** read RC-file and modify defaults accordingly
+*/
+static void
+readrc(char *path)
+{
+	int	i, nr, line=0, errorcnt = 0;
+
+	/*
+	** check if this file is readable with the user's
+	** *real uid/gid* with syscall access()
+	*/
+	if ( access(path, R_OK) == 0)
 	{
-		interval = atoi(val);
-	}
-	else
-	{
-		fprintf(stderr, ".atoprc: interval value not numeric\n");
-		exit(1);
+		FILE	*fp;
+		char	linebuf[256], tagname[20], tagvalue[256];
+
+		fp = fopen(path, "r");
+
+		while ( fgets(linebuf, sizeof linebuf, fp) )
+		{
+			line++;
+
+			i = strlen(linebuf);
+
+			if (i > 0 && linebuf[i-1] == '\n')
+				linebuf[i-1] = 0;
+
+			nr = sscanf(linebuf, "%19s %255[^#]",
+						tagname, tagvalue);
+
+			switch (nr)
+			{
+			   case 0:
+				continue;
+
+			   case 1:
+				if (tagname[0] == '#')
+					continue;
+
+				fprintf(stderr,
+					"%s: syntax error line "
+					"%d (no value specified)\n",
+					path, line);
+
+				cleanstop(1);
+				break;		/* not reached */
+
+			   default:
+				if (tagname[0] == '#')
+					continue;
+				
+				if (tagvalue[0] != '#')
+					break;
+
+				fprintf(stderr,
+					"%s: syntax error line "
+					"%d (no value specified)\n",
+					path, line);
+
+				cleanstop(1);
+			}
+
+			/*
+			** tag name and tag value found
+			** try to recognize tag name
+			*/
+			for (i=0; i < sizeof manrc/sizeof manrc[0]; i++)
+			{
+				if ( strcmp(tagname, manrc[i].tag) ==0)
+				{
+					manrc[i].func(tagname, tagvalue);
+					break;
+				}
+			}
+
+			/*
+			** tag name not recognized
+			*/
+			if (i == sizeof manrc/sizeof manrc[0])
+			{
+				fprintf(stderr,
+					"%s: warning at line %2d "
+					"- tag name %s not valid\n",
+					path, line, tagname);
+
+				errorcnt++;
+			}
+		}
+
+		if (errorcnt)
+			sleep(2);
+
+		fclose(fp);
 	}
 }

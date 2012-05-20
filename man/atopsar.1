@@ -1,4 +1,4 @@
-.TH ATOPSAR 1 "March 2008" "AT Computing"
+.TH ATOPSAR 1 "April 2010" "AT Computing"
 .SH NAME
 .B atopsar
 - AT Computing's System Activity Report (atop related)
@@ -51,7 +51,9 @@ is used, named
 (where YYYYMMDD reflects the date),
 the required date of the form YYYYMMDD can be specified with the
 .B -r
-option instead of the filename.
+option instead of the filename, or
+the symbolic name 'y' can be used for yesterday's daily logfile
+(this can be repeated so 'yyyy' indicates the logfile of four days ago).
 If the
 .B -r
 option is not specified at all, today's daily logfile is used by default.
@@ -183,8 +185,16 @@ Current memory- and swap-occupation.
 Report about paging- and swapping-activity, and overcommitment.
 .PP
 .TP 5
+.B -l
+Report about utilization of logical volumes.
+.PP
+.TP 5
+.B -f
+Report about utilization of multiple devices.
+.PP
+.TP 5
 .B -d
-Report about utilization of disks and disk-partitions.
+Report about utilization of disks.
 .PP
 .TP 5
 .B -i
@@ -293,6 +303,10 @@ Percentage of cpu time consumed for soft interrupt handling.
 Percentage of cpu time stolen by other virtual machines
 running on the same hardware.
 .TP 12
+.B guest%
+Percentage of cpu time used by other virtual machines
+running on the same hardware.
+.TP 12
 .B wait%
 Percentage of unused cpu time while
 at least one of the processes in wait-state awaits completion of disk I/O.
@@ -374,6 +388,10 @@ Main memory used at this moment to cache metadata-blocks (snapshot).
 .B cached
 Main memory used at this moment to cache data-blocks (snapshot).
 .TP 12
+.B dirty
+Amount of memory in the page cache that still has to be flushed to disk
+at this moment (snapshot).
+.TP 12
 .B slabmem
 Main memory used at this moment for dynamically allocated memory
 by the kernel (snapshot).
@@ -409,35 +427,39 @@ plus 50% of memory size.
 The kernel only verifies whether the committed space exceeds the limit
 if strict overcommit handling is configured (vm.overcommit_memory is 2).
 .PP
-The output for the flag
-.B -d
-contains the following columns per active physical disk:
+The output for the flags
+.B -l
+(LVM),
+.B -f
+(MD), and
+.B -d 
+(hard disk) contains the following columns per active unit:
 .TP 12
 .B disk
-Disk name.
+Name.
 .TP 12
 .B busy
-Busy-percentage of the physical disk (i.e. the portion of time that the
+Busy-percentage of the unit (i.e. the portion of time that the
 device was busy handling requests).
 .TP 12
 .B read/s
-Number of read-requests issued per second on this disk.
+Number of read-requests issued per second on this unit.
 .TP 12
 .B KB/read
-Average number of Kbytes transferred per read-request for this disk.
+Average number of Kbytes transferred per read-request for this unit.
 .TP 12
-.B write/s
-Number of write-requests issued per second on this disk.
+.B writ/s
+Number of write-requests issued per second on this unit.
 .TP 12
 .B KB/writ
-Average number of Kbytes transferred per write-request for this disk.
+Average number of Kbytes transferred per write-request for this unit.
 .TP 12
 .B avque
-Average number of disk-requests outstanding in the queue during the time
-that the disk is busy.
+Average number of requests outstanding in the queue during the time
+that the unit is busy.
 .TP 12
 .B avserv
-Average number of milliseconds needed by a request on this physical disk
+Average number of milliseconds needed by a request on this unit
 (seek, latency and data-transfer).
 .PP
 The output for the flag
@@ -974,17 +996,25 @@ is logging in the background):
 .TP 12
 .B \  atopsar
 .PP
-To see the memory occupation for November 24, 2008 between 10:00 and 12:30
+To see the memory occupation for January 2, 2010 between 10:00 and 12:30
 (supposed that
 .B atop
 has been logging daily in the background):
 .PP
 .TP 12
-.B \  atopsar -m -r /var/log/atop_20081124 -b 10:00 -e 12:30
+.B \  atopsar -m -r /var/log/atop_20100102 -b 10:00 -e 12:30
+.br
+\ 
 .br
     or
 .TP 12
-.B \  atopsar -m -r 20081124 -b 10:00 -e 12:30
+.B \  atopsar -m -r 20100102 -b 10:00 -e 12:30
+.br
+\ 
+.br
+    or, suppose it is January 5, 2010 at this moment
+.TP 12
+.B \  atopsar -m -r yyy -b 10:00 -e 12:30
 .PP
 Write a logfile with
 .B atop
@@ -1010,41 +1040,17 @@ as last character):
 .TP 12
 .B \  atopsar -AM | grep '[_*+]$'
 .PP
-.SH CONFIGURATION FILE
-.PP
-The default values used by
-.B atop
-and
-.B atopsar
-can be overruled by a personal configuration file.
-This file, called
-.B ~/.atoprc
-contains a keyword-value pair on every line (blank lines
-and lines starting with a #-sign are skipped).
-The keywords related to the definition of critical percentages
-also apply to
-.B atopsar
-(see description in the 
-.B atop
-man-page).
-.br
-The following keyword can be specified for
-.B atopsar
-specifically:
-.PP
-.TP 9
-.B atopsarflags
-A list of default flags for
-.B atopsar
-can be defined here. The flags that are allowed
-are 'S', 'x', 'C', 'M', 'H', 'a', 'A' and the flags to select
-one or more specific reports.
-.PP
 .SH FILES
+.PP
+.TP 5
+.B /etc/atoprc
+Configuration file containing system-wide default values (mainly flags).
+See related man-page.
 .PP
 .TP 5
 .B ~/.atoprc
 Configuration file containing personal default values (mainly flags).
+See related man-page.
 .PP
 .TP 5
 .BI /var/log/atop/atop_ YYYYMMDD
@@ -1052,8 +1058,9 @@ Daily data file, where
 .I YYYYMMDD
 are digits representing the date.
 .SH SEE ALSO
-.B atop(1)
+.B atop(1),
+.B atoprc(5),
 .br
-.B http://www.ATComputing.nl/Tools/atop
+.B http://www.atoptool.nl
 .SH AUTHOR
-Gerlof Langeveld, AT Computing (gerlof@ATComputing.nl)
+Gerlof Langeveld (gerlof.langeveld@atoptool.nl)

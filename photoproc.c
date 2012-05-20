@@ -8,12 +8,12 @@
 ** of every running process from kernel-space and extract the required
 ** activity-counters.
 ** ==========================================================================
-** Author:      Gerlof Langeveld - AT Computing, Nijmegen, Holland
-** E-mail:      gerlof@ATComputing.nl
+** Author:      Gerlof Langeveld
+** E-mail:      gerlof.langeveld@atoptool.nl
 ** Date:        November 1996
 ** LINUX-port:  June 2000
 ** --------------------------------------------------------------------------
-** Copyright (C) 2000-2005 Gerlof Langeveld
+** Copyright (C) 2000-2010 Gerlof Langeveld
 **
 ** This program is free software; you can redistribute it and/or modify it
 ** under the terms of the GNU General Public License as published by the
@@ -31,6 +31,12 @@
 ** --------------------------------------------------------------------------
 **
 ** $Log: photoproc.c,v $
+** Revision 1.33  2010/04/23 12:19:35  gerlof
+** Modified mail-address in header.
+**
+** Revision 1.32  2009/11/27 13:44:00  gerlof
+** euid, suid, fsuid, egid, sgid and fsgid also registered.
+**
 ** Revision 1.31  2008/03/06 08:38:14  gerlof
 ** Register/show ppid of a process.
 **
@@ -130,7 +136,7 @@
 **
 */
 
-static const char rcsid[] = "$Id: photoproc.c,v 1.31 2008/03/06 08:38:14 gerlof Exp $";
+static const char rcsid[] = "$Id: photoproc.c,v 1.33 2010/04/23 12:19:35 gerlof Exp $";
 
 #include <sys/types.h>
 #include <sys/param.h>
@@ -295,7 +301,8 @@ fillproc(struct pstat *curproc)
 	int		nr;
 	char		line[4096], *cmdhead, *cmdtail;
 	char		command[64], state;
-	int		pid, ppid, ruid, rgid, prio, policy, rtprio, nice,
+	int		pid, ppid, prio, policy, rtprio, nice,
+			ruid, euid, suid, fsuid, rgid, egid, sgid, fsgid,
 			curcpu, nthreads, sleepavg;
 	count_t		utime, stime, starttime;
 	count_t		minflt, majflt, size, rss, nswap,
@@ -370,13 +377,15 @@ fillproc(struct pstat *curproc)
 
 		if (memcmp(line, "Uid:", 4)==0)
 		{
-			sscanf(line, "Uid: %d", &ruid);
+			sscanf(line, "Uid: %d %d %d %d",
+				&ruid, &euid, &suid, &fsuid);
 			continue;
 		}
 
 		if (memcmp(line, "Gid:", 4)==0)
 		{
-			sscanf(line, "Gid: %d", &rgid);
+			sscanf(line, "Gid: %d %d %d %d",
+				&rgid, &egid, &sgid, &fsgid);
 			continue;
 		}
 
@@ -431,9 +440,15 @@ fillproc(struct pstat *curproc)
 	** store required info in process-structure
 	*/
 	curproc->gen.pid      = pid;
-	curproc->gen.ruid     = ruid;
-	curproc->gen.rgid     = rgid;
 	curproc->gen.ppid     = ppid;
+	curproc->gen.ruid     = ruid;
+	curproc->gen.euid     = euid;
+	curproc->gen.suid     = suid;
+	curproc->gen.fsuid    = fsuid;
+	curproc->gen.rgid     = rgid;
+	curproc->gen.egid     = egid;
+	curproc->gen.sgid     = sgid;
+	curproc->gen.fsgid    = fsgid;
 	curproc->gen.nthr     = nthreads;
 	curproc->gen.state    = state;
 

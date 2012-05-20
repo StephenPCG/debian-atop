@@ -7,12 +7,12 @@
 ** This source-file contains functions to calculate the differences for
 ** the system-level and process-level counters since the previous sample.
 ** ==========================================================================
-** Author:      Gerlof Langeveld - AT Computing, Nijmegen, Holland
-** E-mail:      gerlof@ATComputing.nl
+** Author:      Gerlof Langeveld
+** E-mail:      gerlof.langeveld@atoptool.nl
 ** Date:        November 1996
 ** LINUX-port:  June 2000
 ** --------------------------------------------------------------------------
-** Copyright (C) 2000-2005 Gerlof Langeveld
+** Copyright (C) 2000-2010 Gerlof Langeveld
 **
 ** This program is free software; you can redistribute it and/or modify it
 ** under the terms of the GNU General Public License as published by the
@@ -30,6 +30,24 @@
 ** --------------------------------------------------------------------------
 **
 ** $Log: deviate.c,v $
+** Revision 1.45  2010/10/23 14:02:03  gerlof
+** Show counters for total number of running and sleep (S and D) threads.
+**
+** Revision 1.44  2010/05/18 19:19:43  gerlof
+** Introduce CPU frequency and scaling (JC van Winkel).
+**
+** Revision 1.43  2010/04/23 12:19:35  gerlof
+** Modified mail-address in header.
+**
+** Revision 1.42  2010/03/04 10:52:08  gerlof
+** Support I/O-statistics on logical volumes and MD devices.
+**
+** Revision 1.41  2009/12/31 11:34:21  gerlof
+** Sanity-check to bypass kernel-bug showing 497 days of CPU-consumption.
+**
+** Revision 1.40  2009/12/17 11:58:25  gerlof
+** Gather and display new counters: dirty cache and guest cpu usage.
+**
 ** Revision 1.39  2008/02/25 14:51:18  gerlof
 ** Experimental code for HTTP-statistics.
 **
@@ -150,7 +168,7 @@
 **
 */
 
-static const char rcsid[] = "$Id: deviate.c,v 1.39 2008/02/25 14:51:18 gerlof Exp $";
+static const char rcsid[] = "$Id: deviate.c,v 1.45 2010/10/23 14:02:03 gerlof Exp $";
 
 #include <sys/types.h>
 #include <sys/param.h>
@@ -178,12 +196,23 @@ static const char rcsid[] = "$Id: deviate.c,v 1.39 2008/02/25 14:51:18 gerlof Ex
 int
 deviatproc(struct pstat *aproc, int npresent,
            struct pstat *eproc, int nexit, int deviatonly,
-	   struct pstat *dproc, int *nzombie)
+	   struct pstat *dproc, struct sstat *dstat,
+           int *ntrun, int *ntslpi, int *ntslpu, int *nzombie)
 {
 	register int		c, d;
 	register struct pstat	*curstat, *devstat;
 	struct pstat		prestat;
 	struct pinfo		*pinfo;
+	count_t			totusedcpu;
+
+	/*
+	** needed for sanity check later on...
+	*/
+	totusedcpu	= dstat->cpu.all.stime + dstat->cpu.all.utime +
+			  dstat->cpu.all.ntime + dstat->cpu.all.itime +
+			  dstat->cpu.all.wtime + dstat->cpu.all.Itime +
+			  dstat->cpu.all.Stime + dstat->cpu.all.steal +
+			  dstat->cpu.all.guest;
 
 	/*
 	** make new list of all processes in the process-database;
@@ -195,14 +224,24 @@ deviatproc(struct pstat *aproc, int npresent,
 	/*
 	** calculate deviations per present process
 	*/
-	for (c=0, d=0, *nzombie=0; c < npresent; c++)
+	*ntrun=*ntslpi=*ntslpu=*nzombie= 0;
+
+	for (c=0, d=0; c < npresent; c++)
 	{
 		char	newproc = 0;
 
 		curstat = aproc+c;
 
 		if (curstat->gen.state == 'Z')
+		{
 			(*nzombie)++;
+		}
+		else
+		{
+			*ntrun	+= curstat->gen.nthrrun;
+			*ntslpi	+= curstat->gen.nthrslpi;
+			*ntslpu	+= curstat->gen.nthrslpu;
+		}
 
 		/*
 		** get previous figures from process-database
@@ -272,6 +311,21 @@ deviatproc(struct pstat *aproc, int npresent,
 		devstat->cpu.utime  =
 			subcount(curstat->cpu.utime, prestat.cpu.utime);
 
+		/*
+		** sometimes particular kernel versions supply a smaller
+		** amount for consumed CPU-ticks than a previous sample;
+		** with unsigned calculations this results in 497 days of
+		** CPU-consumption so a sanity-check is needed here...
+		*/
+		if (devstat->cpu.stime > totusedcpu)
+			devstat->cpu.stime = 1;
+
+		if (devstat->cpu.utime > totusedcpu)
+			devstat->cpu.utime = 1;
+
+		/*
+		** do further calculations
+		*/
 		devstat->dsk.rio    =
 			subcount(curstat->dsk.rio, prestat.dsk.rio);
 		devstat->dsk.rsz    =
@@ -514,7 +568,7 @@ deviatproc(struct pstat *aproc, int npresent,
 void
 deviatsyst(struct sstat *cur, struct sstat *pre, struct sstat *dev)
 {
-	register int	i;
+	register int	i, j;
 	count_t		*cdev, *ccur, *cpre;
 
 	dev->cpu.nrcpu     = cur->cpu.nrcpu;
@@ -531,34 +585,46 @@ deviatsyst(struct sstat *cur, struct sstat *pre, struct sstat *dev)
 	dev->cpu.all.Stime = subcount(cur->cpu.all.Stime, pre->cpu.all.Stime);
 
 	dev->cpu.all.steal = subcount(cur->cpu.all.steal, pre->cpu.all.steal);
+	dev->cpu.all.guest = subcount(cur->cpu.all.guest, pre->cpu.all.guest);
 
-	if (dev->cpu.nrcpu == 1)
+	for (i=0; i < dev->cpu.nrcpu; i++)
 	{
-		dev->cpu.cpu[0] = dev->cpu.all;
-	}
-	else
-	{
-		for (i=0; i < dev->cpu.nrcpu; i++)
-		{
-			dev->cpu.cpu[i].cpunr = cur->cpu.cpu[i].cpunr;
-			dev->cpu.cpu[i].stime = subcount(cur->cpu.cpu[i].stime,
-						         pre->cpu.cpu[i].stime);
-			dev->cpu.cpu[i].utime = subcount(cur->cpu.cpu[i].utime,
-					 	         pre->cpu.cpu[i].utime);
-			dev->cpu.cpu[i].ntime = subcount(cur->cpu.cpu[i].ntime,
-						         pre->cpu.cpu[i].ntime);
-			dev->cpu.cpu[i].itime = subcount(cur->cpu.cpu[i].itime,
-						         pre->cpu.cpu[i].itime);
-			dev->cpu.cpu[i].wtime = subcount(cur->cpu.cpu[i].wtime,
-						         pre->cpu.cpu[i].wtime);
-			dev->cpu.cpu[i].Itime = subcount(cur->cpu.cpu[i].Itime,
-						         pre->cpu.cpu[i].Itime);
-			dev->cpu.cpu[i].Stime = subcount(cur->cpu.cpu[i].Stime,
-						         pre->cpu.cpu[i].Stime);
+		count_t 	ticks;
 
-			dev->cpu.cpu[i].steal = subcount(cur->cpu.cpu[i].steal,
-						         pre->cpu.cpu[i].steal);
-		}
+		dev->cpu.cpu[i].cpunr = cur->cpu.cpu[i].cpunr;
+		dev->cpu.cpu[i].stime = subcount(cur->cpu.cpu[i].stime,
+					         pre->cpu.cpu[i].stime);
+		dev->cpu.cpu[i].utime = subcount(cur->cpu.cpu[i].utime,
+				 	         pre->cpu.cpu[i].utime);
+		dev->cpu.cpu[i].ntime = subcount(cur->cpu.cpu[i].ntime,
+					         pre->cpu.cpu[i].ntime);
+		dev->cpu.cpu[i].itime = subcount(cur->cpu.cpu[i].itime,
+					         pre->cpu.cpu[i].itime);
+		dev->cpu.cpu[i].wtime = subcount(cur->cpu.cpu[i].wtime,
+					         pre->cpu.cpu[i].wtime);
+		dev->cpu.cpu[i].Itime = subcount(cur->cpu.cpu[i].Itime,
+					         pre->cpu.cpu[i].Itime);
+		dev->cpu.cpu[i].Stime = subcount(cur->cpu.cpu[i].Stime,
+					         pre->cpu.cpu[i].Stime);
+
+		dev->cpu.cpu[i].steal = subcount(cur->cpu.cpu[i].steal,
+					         pre->cpu.cpu[i].steal);
+		dev->cpu.cpu[i].guest = subcount(cur->cpu.cpu[i].guest,
+					         pre->cpu.cpu[i].guest);
+
+		ticks 		      = cur->cpu.cpu[i].freqcnt.ticks;
+
+		dev->cpu.cpu[i].freqcnt.maxfreq = 
+					cur->cpu.cpu[i].freqcnt.maxfreq;
+		dev->cpu.cpu[i].freqcnt.cnt = ticks ?
+					subcount(cur->cpu.cpu[i].freqcnt.cnt,
+					         pre->cpu.cpu[i].freqcnt.cnt)
+					       : cur->cpu.cpu[i].freqcnt.cnt;
+
+		dev->cpu.cpu[i].freqcnt.ticks = ticks ?
+					subcount(cur->cpu.cpu[i].freqcnt.ticks,
+					         pre->cpu.cpu[i].freqcnt.ticks)
+					       : cur->cpu.cpu[i].freqcnt.ticks;
 	}
 
 	dev->cpu.lavg1		= cur->cpu.lavg1;
@@ -572,6 +638,7 @@ deviatsyst(struct sstat *cur, struct sstat *pre, struct sstat *dev)
 	dev->mem.committed	= cur->mem.committed;
 	dev->mem.commitlim	= cur->mem.commitlim;
 	dev->mem.cachemem	= cur->mem.cachemem;
+	dev->mem.cachedrt	= cur->mem.cachedrt;
 	dev->mem.totswap	= cur->mem.totswap;
 	dev->mem.freeswap	= cur->mem.freeswap;
 
@@ -583,7 +650,7 @@ deviatsyst(struct sstat *cur, struct sstat *pre, struct sstat *dev)
 
 	/*
 	** structures with network-related counters are considered
-	** as tabels of frequency-counters that have to be subtracte;
+	** as tables of frequency-counters that have to be subtracted;
 	** values that do not represent a frequency are corrected afterwards
 	*/
 	for (cdev = (count_t *)&dev->net.ipv4,
@@ -772,26 +839,170 @@ deviatsyst(struct sstat *cur, struct sstat *pre, struct sstat *dev)
 	/*
 	** calculate deviations for disks
 	*/
-	for (i=0; cur->xdsk.xdsk[i].name[0]; i++)
+	for (i=j=0; cur->dsk.dsk[i].name[0]; i++)
 	{
-		strcpy(dev->xdsk.xdsk[i].name, cur->xdsk.xdsk[i].name);
+		int	realj = j;
 
-		dev->xdsk.xdsk[i].nread  = subcount(cur->xdsk.xdsk[i].nread,
-		                                    pre->xdsk.xdsk[i].nread);
-		dev->xdsk.xdsk[i].nwrite = subcount(cur->xdsk.xdsk[i].nwrite,
-		                                    pre->xdsk.xdsk[i].nwrite);
-		dev->xdsk.xdsk[i].nrsect = subcount(cur->xdsk.xdsk[i].nrsect,
-		                                    pre->xdsk.xdsk[i].nrsect);
-		dev->xdsk.xdsk[i].nwsect = subcount(cur->xdsk.xdsk[i].nwsect,
-		                                    pre->xdsk.xdsk[i].nwsect);
-		dev->xdsk.xdsk[i].io_ms  = subcount(cur->xdsk.xdsk[i].io_ms,
-		                                    pre->xdsk.xdsk[i].io_ms);
-		dev->xdsk.xdsk[i].avque  = subcount(cur->xdsk.xdsk[i].avque,
-		                                    pre->xdsk.xdsk[i].avque);
+		/*
+ 		** check if disk has been added or removed since
+		** previous interval
+		*/
+		if ( strcmp(cur->dsk.dsk[i].name, pre->dsk.dsk[j].name) != 0)
+		{
+			for (j++; pre->dsk.dsk[j].name[0]; j++)
+			{
+				if ( strcmp(cur->dsk.dsk[i].name,
+						pre->dsk.dsk[j].name) == 0)
+					break;
+			}
+
+			/*
+			** either the corresponding entry has been found
+			** in the case that a disk has been removed, or
+			** an empty entry has been found (all counters
+			** on zero) in the case that a disk has been added
+			** during the last sample
+			*/
+		}
+
+		strcpy(dev->dsk.dsk[i].name, cur->dsk.dsk[i].name);
+
+		dev->dsk.dsk[i].nread  = subcount(cur->dsk.dsk[i].nread,
+		                                  pre->dsk.dsk[j].nread);
+		dev->dsk.dsk[i].nwrite = subcount(cur->dsk.dsk[i].nwrite,
+		                                  pre->dsk.dsk[j].nwrite);
+		dev->dsk.dsk[i].nrsect = subcount(cur->dsk.dsk[i].nrsect,
+		                                  pre->dsk.dsk[j].nrsect);
+		dev->dsk.dsk[i].nwsect = subcount(cur->dsk.dsk[i].nwsect,
+		                                  pre->dsk.dsk[j].nwsect);
+		dev->dsk.dsk[i].io_ms  = subcount(cur->dsk.dsk[i].io_ms,
+		                                  pre->dsk.dsk[j].io_ms);
+		dev->dsk.dsk[i].avque  = subcount(cur->dsk.dsk[i].avque,
+		                                  pre->dsk.dsk[j].avque);
+
+		/*
+		** determine new j
+		*/
+		if (pre->dsk.dsk[j].name)	// existing matching entry
+			j++;
+		else
+			j = realj;		// empty entry: stick to old j
 	}
 
-	dev->xdsk.xdsk[i].name[0] = '\0';
-	dev->xdsk.nrxdsk = i;
+	dev->dsk.dsk[i].name[0] = '\0';
+	dev->dsk.ndsk = i;
+
+	/*
+	** calculate deviations for multiple devices
+	*/
+	for (i=j=0; cur->dsk.mdd[i].name[0]; i++)
+	{
+		int	realj = j;
+
+		/*
+ 		** check if md has been added or removed since
+		** previous interval
+		*/
+		if ( strcmp(cur->dsk.mdd[i].name, pre->dsk.mdd[j].name) != 0)
+		{
+			for (j++; pre->dsk.mdd[j].name[0]; j++)
+			{
+				if ( strcmp(cur->dsk.mdd[i].name,
+						pre->dsk.mdd[j].name) == 0)
+					break;
+			}
+
+			/*
+			** either the corresponding entry has been found
+			** in the case that a md has been removed, or
+			** an empty entry has been found (all counters
+			** on zero) in the case that a md has been added
+			** during the last sample
+			*/
+		}
+
+		strcpy(dev->dsk.mdd[i].name, cur->dsk.mdd[i].name);
+
+		dev->dsk.mdd[i].nread  = subcount(cur->dsk.mdd[i].nread,
+		                                  pre->dsk.mdd[j].nread);
+		dev->dsk.mdd[i].nwrite = subcount(cur->dsk.mdd[i].nwrite,
+		                                  pre->dsk.mdd[j].nwrite);
+		dev->dsk.mdd[i].nrsect = subcount(cur->dsk.mdd[i].nrsect,
+		                                  pre->dsk.mdd[j].nrsect);
+		dev->dsk.mdd[i].nwsect = subcount(cur->dsk.mdd[i].nwsect,
+		                                  pre->dsk.mdd[j].nwsect);
+		dev->dsk.mdd[i].io_ms  = subcount(cur->dsk.mdd[i].io_ms,
+		                                  pre->dsk.mdd[j].io_ms);
+		dev->dsk.mdd[i].avque  = subcount(cur->dsk.mdd[i].avque,
+		                                  pre->dsk.mdd[j].avque);
+
+		/*
+		** determine new j
+		*/
+		if (pre->dsk.mdd[j].name)	// existing matching entry
+			j++;
+		else
+			j = realj;		// empty entry: stick to old j
+	}
+
+	dev->dsk.mdd[i].name[0] = '\0';
+	dev->dsk.nmdd = i;
+
+	/*
+	** calculate deviations for LVM logical volumes
+	*/
+	for (i=j=0; cur->dsk.lvm[i].name[0]; i++)
+	{
+		int	realj = j;
+
+		/*
+ 		** check if logical volume has been added or removed since
+		** previous interval
+		*/
+		if ( strcmp(cur->dsk.lvm[i].name, pre->dsk.lvm[j].name) != 0)
+		{
+			for (j++; pre->dsk.lvm[j].name[0]; j++)
+			{
+				if ( strcmp(cur->dsk.lvm[i].name,
+						pre->dsk.lvm[j].name) == 0)
+					break;
+			}
+
+			/*
+			** either the corresponding entry has been found
+			** in the case that a logical volume has been removed,
+			** or an empty entry has been found (all counters
+			** on zero) in the case that a logical volume has
+			** been added during the last sample
+			*/
+		}
+
+		strcpy(dev->dsk.lvm[i].name, cur->dsk.lvm[i].name);
+
+		dev->dsk.lvm[i].nread  = subcount(cur->dsk.lvm[i].nread,
+		                                  pre->dsk.lvm[j].nread);
+		dev->dsk.lvm[i].nwrite = subcount(cur->dsk.lvm[i].nwrite,
+		                                  pre->dsk.lvm[j].nwrite);
+		dev->dsk.lvm[i].nrsect = subcount(cur->dsk.lvm[i].nrsect,
+		                                  pre->dsk.lvm[j].nrsect);
+		dev->dsk.lvm[i].nwsect = subcount(cur->dsk.lvm[i].nwsect,
+		                                  pre->dsk.lvm[j].nwsect);
+		dev->dsk.lvm[i].io_ms  = subcount(cur->dsk.lvm[i].io_ms,
+		                                  pre->dsk.lvm[j].io_ms);
+		dev->dsk.lvm[i].avque  = subcount(cur->dsk.lvm[i].avque,
+		                                  pre->dsk.lvm[j].avque);
+
+		/*
+		** determine new j
+		*/
+		if (pre->dsk.lvm[j].name)	// existing matching entry
+			j++;
+		else
+			j = realj;		// empty entry: stick to old j
+	}
+
+	dev->dsk.lvm[i].name[0] = '\0';
+	dev->dsk.nlvm = i;
 
 	/*
 	** application-specific counters
@@ -841,6 +1052,7 @@ totalsyst(char category, struct sstat *new, struct sstat *tot)
 		tot->cpu.all.Itime += new->cpu.all.Itime;
 		tot->cpu.all.Stime += new->cpu.all.Stime;
 		tot->cpu.all.steal += new->cpu.all.steal;
+		tot->cpu.all.guest += new->cpu.all.guest;
 
 		if (new->cpu.nrcpu == 1)
 		{
@@ -859,6 +1071,7 @@ totalsyst(char category, struct sstat *new, struct sstat *tot)
 				tot->cpu.cpu[i].Itime += new->cpu.cpu[i].Itime;
 				tot->cpu.cpu[i].Stime += new->cpu.cpu[i].Stime;
 				tot->cpu.cpu[i].steal += new->cpu.cpu[i].steal;
+				tot->cpu.cpu[i].guest += new->cpu.cpu[i].guest;
 			}
 		}
 
@@ -875,6 +1088,7 @@ totalsyst(char category, struct sstat *new, struct sstat *tot)
 		tot->mem.committed	 = new->mem.committed;
 		tot->mem.commitlim	 = new->mem.commitlim;
 		tot->mem.cachemem	 = new->mem.cachemem;
+		tot->mem.cachedrt	 = new->mem.cachedrt;
 		tot->mem.totswap	 = new->mem.totswap;
 		tot->mem.freeswap	 = new->mem.freeswap;
 
@@ -887,7 +1101,7 @@ totalsyst(char category, struct sstat *new, struct sstat *tot)
 	   case 'n':	/* accumulate network-related counters */
 		/*
 		** structures with network-related counters are considered
-		** as tabels of frequency-counters that will be accumulated;
+		** as tables of frequency-counters that will be accumulated;
 		** values that do not represent a frequency are corrected
 		** afterwards
 		*/
@@ -1021,20 +1235,50 @@ totalsyst(char category, struct sstat *new, struct sstat *tot)
 		break;
 
 	   case 'd':	/* accumulate disk-related counters */
-		for (i=0; new->xdsk.xdsk[i].name[0]; i++)
+		for (i=0; new->dsk.dsk[i].name[0]; i++)
 		{
-			strcpy(tot->xdsk.xdsk[i].name, new->xdsk.xdsk[i].name);
+			strcpy(tot->dsk.dsk[i].name, new->dsk.dsk[i].name);
 	
-			tot->xdsk.xdsk[i].nread  += new->xdsk.xdsk[i].nread;
-			tot->xdsk.xdsk[i].nwrite += new->xdsk.xdsk[i].nwrite;
-			tot->xdsk.xdsk[i].nrsect += new->xdsk.xdsk[i].nrsect;
-			tot->xdsk.xdsk[i].nwsect += new->xdsk.xdsk[i].nwsect;
-			tot->xdsk.xdsk[i].io_ms  += new->xdsk.xdsk[i].io_ms;
-			tot->xdsk.xdsk[i].avque  += new->xdsk.xdsk[i].avque;
+			tot->dsk.dsk[i].nread  += new->dsk.dsk[i].nread;
+			tot->dsk.dsk[i].nwrite += new->dsk.dsk[i].nwrite;
+			tot->dsk.dsk[i].nrsect += new->dsk.dsk[i].nrsect;
+			tot->dsk.dsk[i].nwsect += new->dsk.dsk[i].nwsect;
+			tot->dsk.dsk[i].io_ms  += new->dsk.dsk[i].io_ms;
+			tot->dsk.dsk[i].avque  += new->dsk.dsk[i].avque;
 		}
 	
-		tot->xdsk.xdsk[i].name[0] = '\0';
-		tot->xdsk.nrxdsk = i;
+		tot->dsk.dsk[i].name[0] = '\0';
+		tot->dsk.ndsk = i;
+
+		for (i=0; new->dsk.lvm[i].name[0]; i++)
+		{
+			strcpy(tot->dsk.lvm[i].name, new->dsk.lvm[i].name);
+	
+			tot->dsk.lvm[i].nread  += new->dsk.lvm[i].nread;
+			tot->dsk.lvm[i].nwrite += new->dsk.lvm[i].nwrite;
+			tot->dsk.lvm[i].nrsect += new->dsk.lvm[i].nrsect;
+			tot->dsk.lvm[i].nwsect += new->dsk.lvm[i].nwsect;
+			tot->dsk.lvm[i].io_ms  += new->dsk.lvm[i].io_ms;
+			tot->dsk.lvm[i].avque  += new->dsk.lvm[i].avque;
+		}
+	
+		tot->dsk.lvm[i].name[0] = '\0';
+		tot->dsk.nlvm = i;
+
+		for (i=0; new->dsk.mdd[i].name[0]; i++)
+		{
+			strcpy(tot->dsk.mdd[i].name, new->dsk.mdd[i].name);
+	
+			tot->dsk.mdd[i].nread  += new->dsk.mdd[i].nread;
+			tot->dsk.mdd[i].nwrite += new->dsk.mdd[i].nwrite;
+			tot->dsk.mdd[i].nrsect += new->dsk.mdd[i].nrsect;
+			tot->dsk.mdd[i].nwsect += new->dsk.mdd[i].nwsect;
+			tot->dsk.mdd[i].io_ms  += new->dsk.mdd[i].io_ms;
+			tot->dsk.mdd[i].avque  += new->dsk.mdd[i].avque;
+		}
+	
+		tot->dsk.mdd[i].name[0] = '\0';
+		tot->dsk.nmdd = i;
 		break;
 	}
 }

@@ -7,8 +7,8 @@
 ** Include-file describing process-level counters maintained and functions
 ** to access the process-database.
 ** ================================================================
-** Author:      Gerlof Langeveld - AT Computing, Nijmegen, Holland
-** E-mail:      gerlof@ATComputing.nl
+** Author:      Gerlof Langeveld
+** E-mail:      gerlof.langeveld@atoptool.nl
 ** Date:        November 1996
 ** LINUX-port:  June 2000
 **
@@ -24,7 +24,7 @@
 */
 
 #define	PNAMLEN		15
-#define	CMDLEN		68
+#define	CMDLEN		150
 
 /* 
 ** structure containing only relevant process-info extracted 
@@ -34,14 +34,21 @@ struct pstat {
 	/* GENERAL PROCESS INFO 					*/
 	struct gen {
 		int	pid;		/* process identification 	*/
-		int	ruid;		/* real user  identification 	*/
-		int	rgid;		/* real group identification 	*/
 		int	ppid;           /* parent process identification*/
+		int	ruid;		/* real  user  identification 	*/
+		int	euid;		/* eff.  user  identification 	*/
+		int	suid;		/* saved user  identification 	*/
+		int	fsuid;		/* fs    user  identification 	*/
+		int	rgid;		/* real  group identification 	*/
+		int	egid;		/* eff.  group identification 	*/
+		int	sgid;		/* saved group identification 	*/
+		int	fsgid;		/* fs    group identification 	*/
 		int	nthr;		/* number of threads in tgroup 	*/
 		char	name[PNAMLEN+1];/* process name string       	*/
 		char 	state;		/* process state ('E' = exited)	*/
 		int	excode;		/* process exit status		*/
 		time_t 	btime;		/* process start time (epoch)	*/
+		time_t 	elaps;		/* process elaps time (hertz)	*/
 		char	cmdline[CMDLEN+1];/* command-line string       	*/
 		int	nthrslpi;	/* # threads in state 'S'       */
 		int	nthrslpu;	/* # threads in state 'D'       */
@@ -125,6 +132,7 @@ int		pdb_srchresidue(struct pstat *, struct pinfo **);
 ** prototypes for raw process-statistics functions
 */
 int		deviatproc(struct pstat *, int, struct pstat *, int, int,
-					struct pstat *, int *);
+				struct pstat *, struct sstat *,
+				int *, int *, int *, int *);
 int		photoproc(struct pstat *, int);
 unsigned int	countprocs(void);

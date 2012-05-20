@@ -7,11 +7,17 @@
 ** This source-file contains the Linux-specific functions to calculate
 ** figures to be visualized.
 ** ==========================================================================
-** Author:      Gerlof Langeveld - AT Computing, Nijmegen, Holland
-** E-mail:      gerlof@ATComputing.nl
+** Author:      Gerlof Langeveld
+**              Original version.
+** E-mail:      gerlof.langeveld@atoptool.nl
 ** Date:        July 2002
+**
+** Author:	JC van Winkel - AT Computing, Nijmegen, Holland
+**              Complete redesign.
+** E-mail:      jc@ATComputing.nl
+** Date:        November 2009
 ** --------------------------------------------------------------------------
-** Copyright (C) 2000-2007 Gerlof Langeveld
+** Copyright (C) 2009-2010 JC van Winkel
 **
 ** This program is free software; you can redistribute it and/or modify it
 ** under the terms of the GNU General Public License as published by the
@@ -29,6 +35,69 @@
 ** --------------------------------------------------------------------------
 **
 ** $Log: showlinux.c,v $
+** Revision 1.70  2010/10/23 14:04:12  gerlof
+** Counters for total number of running and sleep threads (JC van Winkel).
+**
+** Revision 1.69  2010/05/18 19:20:08  gerlof
+** Introduce CPU frequency and scaling (JC van Winkel).
+**
+** Revision 1.68  2010/04/23 12:19:35  gerlof
+** Modified mail-address in header.
+**
+** Revision 1.67  2010/04/17 17:20:33  gerlof
+** Allow modifying the layout of the columns in the system lines.
+**
+** Revision 1.66  2010/03/16 21:14:46  gerlof
+** Program and user selection can be combined with program and user
+** accumulation.
+**
+** Revision 1.65  2010/03/04 10:53:26  gerlof
+** Support I/O-statistics on logical volumes and MD devices.
+**
+** Revision 1.64  2010/01/18 18:06:28  gerlof
+** Modified priorities for system-level columns.
+**
+** Revision 1.63  2010/01/16 12:54:33  gerlof
+** Corrected order of columns.
+**
+** Revision 1.62  2010/01/16 11:38:02  gerlof
+** Corrected counters for patched kernels (JC van Winkel).
+**
+** Revision 1.61  2010/01/08 11:25:56  gerlof
+** Corrected column-width and priorities of network-stats.
+**
+** Revision 1.60  2010/01/03 18:27:19  gerlof
+** *** empty log message ***
+**
+** Revision 1.59  2009/12/19 21:01:28  gerlof
+** Improved syntax checking for ownprocline keyword (JC van Winkel).
+**
+** Revision 1.58  2009/12/17 11:59:28  gerlof
+** Gather and display new counters: dirty cache and guest cpu usage.
+**
+** Revision 1.57  2009/12/17 10:51:19  gerlof
+** Allow own defined process line with key 'o' and a definition
+** in the atoprc file.
+**
+** Revision 1.56  2009/12/17 09:13:19  gerlof
+** Reformatted some fields for better grouping of info.
+**
+** Revision 1.55  2009/12/12 10:11:18  gerlof
+** Register and display end date and end time for process.
+**
+** Revision 1.54  2009/12/12 09:06:48  gerlof
+** \Corrected cumulated disk I/O per user/program (JC van Winkel).
+**
+** Revision 1.53  2009/12/10 14:02:39  gerlof
+** Add EUID, SUID and FSUID (and similar for GID's).
+**
+** Revision 1.52  2009/12/10 11:56:34  gerlof
+** Various bug-solutions.
+**
+** Revision 1.51  2009/12/10 10:08:01  gerlof
+** Major redesign for improved user interface (variable number of columns).
+** Made by JC van Winkel.
+**
 ** Revision 1.49  2008/03/06 08:38:28  gerlof
 ** Register/show ppid of a process.
 **
@@ -193,7 +262,7 @@
 **
 */
 
-static const char rcsid[] = "$Id: showlinux.c,v 1.49 2008/03/06 08:38:28 gerlof Exp $";
+static const char rcsid[] = "$Id: showlinux.c,v 1.70 2010/10/23 14:04:12 gerlof Exp $";
 
 #include <sys/types.h>
 #include <sys/param.h>
@@ -217,121 +286,425 @@ static const char rcsid[] = "$Id: showlinux.c,v 1.49 2008/03/06 08:38:28 gerlof 
 #include "photoproc.h"
 #include "photosyst.h"
 #include "showgeneric.h"
+#include "showlinux.h"
 
 /*
 ** critical percentages for occupation-percentage;
 ** these defaults can be overruled via the config-file
 */
-int	cpubadness = 90;	/* percentage		*/
-int	membadness = 90;	/* percentage		*/
-int	swpbadness = 80;	/* percentage		*/
-int	dskbadness = 70;	/* percentage		*/
-int	netbadness = 90;	/* percentage		*/
-int	pagbadness = 10;	/* number per second	*/
+int   cpubadness = 90;        /* percentage           */
+int   membadness = 90;        /* percentage           */
+int   swpbadness = 80;        /* percentage           */
+int   dskbadness = 70;        /* percentage           */
+int   netbadness = 90;        /* percentage           */
+int   pagbadness = 10;        /* number per second    */
 
-int	almostcrit = 80;	/* percentage		*/
+int   almostcrit = 80;        /* percentage           */
 
 /*
-** table with column headers for sorted process list
-*/
-static char	*columnhead[] = {
-	   		[MSORTCPU]= "CPU", [MSORTMEM]= "MEM",
-	   		[MSORTDSK]= "DSK", [MSORTNET]= "NET",
+ * tables with all sys_printdefs
+ */
+sys_printdef *prcsyspdefs[] = {
+	&syspdef_PRCSYS,
+	&syspdef_PRCUSER,
+	&syspdef_PRCNPROC,
+        &syspdef_PRCNRUNNING,
+        &syspdef_PRCNSLEEPING,
+        &syspdef_PRCNDSLEEPING,
+	&syspdef_PRCNZOMBIE,
+	&syspdef_PRCCLONES,
+	&syspdef_PRCNNEXIT,
+	&syspdef_BLANKBOX,
+        0
+};
+sys_printdef *cpusyspdefs[] = {
+	&syspdef_CPUSYS,
+	&syspdef_CPUUSER,
+	&syspdef_CPUIRQ,
+	&syspdef_CPUIDLE,
+	&syspdef_CPUWAIT,
+	&syspdef_BLANKBOX,
+	&syspdef_CPUFREQ,
+	&syspdef_CPUSCALE,
+	&syspdef_CPUSTEAL,
+	&syspdef_CPUGUEST,
+	&syspdef_BLANKBOX,
+        0
+};
+sys_printdef *cpisyspdefs[] = {
+	&syspdef_CPUISYS,
+	&syspdef_CPUIUSER,
+	&syspdef_CPUIIRQ,
+	&syspdef_CPUIIDLE,
+	&syspdef_CPUIWAIT,
+	&syspdef_BLANKBOX,
+	&syspdef_CPUIFREQ,
+	&syspdef_CPUISCALE,
+	&syspdef_CPUISTEAL,
+	&syspdef_CPUIGUEST,
+	&syspdef_BLANKBOX,
+        0
+};
+sys_printdef *cplsyspdefs[] = {
+	&syspdef_CPLAVG1,
+	&syspdef_CPLAVG5,
+	&syspdef_CPLAVG15,
+	&syspdef_CPLCSW,
+	&syspdef_CPLNUMCPU,
+	&syspdef_CPLINTR,
+	&syspdef_BLANKBOX,
+        0
+};
+sys_printdef *memsyspdefs[] = {
+	&syspdef_MEMTOT,
+	&syspdef_MEMFREE,
+	&syspdef_MEMCACHE,
+	&syspdef_MEMDIRTY,
+	&syspdef_MEMBUFFER,
+	&syspdef_MEMSLAB,
+	&syspdef_BLANKBOX,
+        0
+};
+sys_printdef *swpsyspdefs[] = {
+	&syspdef_SWPTOT,
+	&syspdef_SWPFREE,
+	&syspdef_SWPCOMMITTED,
+	&syspdef_SWPCOMMITLIM,
+	&syspdef_BLANKBOX,
+        0
+};
+sys_printdef *pagsyspdefs[] = {
+	&syspdef_PAGSCAN,
+	&syspdef_PAGSTALL,
+	&syspdef_PAGSWIN,
+	&syspdef_PAGSWOUT,
+	&syspdef_BLANKBOX,
+        0
+};
+sys_printdef *dsksyspdefs[] = {
+	&syspdef_DSKNAME,
+	&syspdef_DSKBUSY,
+	&syspdef_DSKNREAD,
+	&syspdef_DSKNWRITE,
+	&syspdef_DSKMBPERSECWR,
+	&syspdef_DSKMBPERSECRD,
+	&syspdef_DSKKBPERWR,
+	&syspdef_DSKKBPERRD,
+	&syspdef_DSKAVQUEUE,
+	&syspdef_DSKAVIO,
+	&syspdef_BLANKBOX,
+        0
+};
+sys_printdef *nettranssyspdefs[] = {
+	&syspdef_NETTRANSPORT,
+	&syspdef_NETTCPI,
+	&syspdef_NETTCPO,
+	&syspdef_NETUDPI,
+	&syspdef_NETUDPO,
+	&syspdef_NETTCPACTOPEN,
+	&syspdef_NETTCPPASVOPEN,
+	&syspdef_NETTCPRETRANS,
+	&syspdef_NETTCPINERR,
+	&syspdef_NETTCPORESET,
+	&syspdef_NETUDPNOPORT,
+	&syspdef_NETUDPINERR,
+	&syspdef_BLANKBOX,
+        0
+};
+sys_printdef *netnetsyspdefs[] = {
+	&syspdef_NETNETWORK,
+	&syspdef_NETIPI,
+	&syspdef_NETIPO,
+	&syspdef_NETIPFRW,
+	&syspdef_NETIPDELIV,
+	&syspdef_NETICMPIN,
+	&syspdef_NETICMPOUT,
+	&syspdef_BLANKBOX,
+        0
+};
+sys_printdef *netintfsyspdefs[] = {
+	&syspdef_NETNAME,
+	&syspdef_NETPCKI,
+	&syspdef_NETPCKO,
+	&syspdef_NETSPEEDIN,
+	&syspdef_NETSPEEDOUT,
+	&syspdef_NETCOLLIS,
+	&syspdef_NETMULTICASTIN,
+	&syspdef_NETRCVERR,
+	&syspdef_NETSNDERR,
+	&syspdef_NETRCVDROP,
+	&syspdef_NETSNDDROP,
+	&syspdef_BLANKBOX,
+        0
 };
 
 /*
-** function protoypes
-*/
-static int	syscolorlabel(char *, int, unsigned int);
-static void	syscoloroff  (char);
+ * table with all proc_printdefs
+ */
+proc_printdef *allprocpdefs[]= 
+{
+	&procprt_PID,
+	&procprt_PPID,
+	&procprt_SYSCPU,
+	&procprt_USRCPU,
+	&procprt_VGROW,
+	&procprt_RGROW,
+	&procprt_MINFLT,
+	&procprt_MAJFLT,
+	&procprt_VSTEXT,
+	&procprt_VSIZE,
+	&procprt_RSIZE,
+	&procprt_CMD,
+	&procprt_RUID,
+	&procprt_EUID,
+	&procprt_SUID,
+	&procprt_FSUID,
+	&procprt_RGID,
+	&procprt_EGID,
+	&procprt_SGID,
+	&procprt_FSGID,
+	&procprt_STDATE,
+	&procprt_STTIME,
+	&procprt_ENDATE,
+	&procprt_ENTIME,
+	&procprt_THR,
+	&procprt_TRUN,
+	&procprt_TSLPI,
+	&procprt_TSLPU,
+	&procprt_POLI,
+	&procprt_NICE,
+	&procprt_PRI,
+	&procprt_RTPR,
+	&procprt_CURCPU,
+	&procprt_ST,
+	&procprt_EXC,
+	&procprt_S,
+	&procprt_COMMAND_LINE,
+	&procprt_NPROCS,
+	&procprt_RDDSK,          // refers to correct disk display routines
+	&procprt_WRDSK,          // refers to correct disk display routines
+	&procprt_WCANCEL_IOSTAT,
+	&procprt_AVGRSZ,
+	&procprt_AVGWSZ,
+	&procprt_TOTRSZ,
+	&procprt_TOTWSZ,
+	&procprt_TCPRCV,
+	&procprt_TCPRASZ,
+	&procprt_TCPSND,
+	&procprt_TCPSASZ,
+	&procprt_UDPRCV,
+	&procprt_UDPRASZ,
+	&procprt_UDPSND,
+	&procprt_UDPSASZ,
+	&procprt_RAWSND,
+	&procprt_RAWRCV,
+	&procprt_RNET,
+	&procprt_SNET,
+	&procprt_SORTITEM,
+        0
+};
+
+
+/***************************************************************/
+/*
+ * output definitions for process data
+ * these should be user configurable
+ */
+proc_printpair userprocs[MAXITEMS];
+proc_printpair memprocs[MAXITEMS];
+proc_printpair schedprocs[MAXITEMS];
+proc_printpair genprocs[MAXITEMS];
+proc_printpair dskprocs[MAXITEMS];
+proc_printpair netprocs[MAXITEMS];
+proc_printpair varprocs[MAXITEMS];
+proc_printpair cmdprocs[MAXITEMS];
+proc_printpair ownprocs[MAXITEMS];
+proc_printpair totusers[MAXITEMS];
+proc_printpair totprocs[MAXITEMS];
+
+
+/*****************************************************************/
+/*
+ * output definitions for system data
+ * these should be user configurable
+ */
+sys_printpair sysprcline[MAXITEMS];
+sys_printpair allcpuline[MAXITEMS];
+sys_printpair indivcpuline[MAXITEMS];
+sys_printpair cplline[MAXITEMS];
+sys_printpair memline[MAXITEMS];
+sys_printpair swpline[MAXITEMS];
+sys_printpair pagline[MAXITEMS];
+sys_printpair dskline[MAXITEMS];
+sys_printpair nettransportline[MAXITEMS];
+sys_printpair netnetline[MAXITEMS];
+sys_printpair netinterfaceline[MAXITEMS];
+
+typedef struct {
+        const char *name;
+        int        prio;
+} name_prio;
 
 /*
-** format-lines for printing
+** make an string,int pair array from a string.  chop based on spaces/tabs
+** example: input: "ABCD:3  EFG:1   QWE:16"
+**         output: { { "ABCD", 3 }, {"EFG", 1},  { "QWE", 16}, { 0, 0 }  }
 */
-char 	*prcline   	= "PRC | sys %s | user %s | #proc %s | #zombie %s |"
-	       	     	  " #exit %s |\n";
-/***************************************************************************/
-char	*genprochdr1	= "\n  PID  SYSCPU  USRCPU  VGROW  RGROW RDDSK WRDSK "
-		     	  "RNET SNET S %c%s CMD  %4d/%-4d\n";
-char 	*genproclina1	= "%5d %s %s %s %s %s %s %s %s %c %3.0lf%% %.14s\n";
-char 	*genprocline1	= "%s %s     0K     0K (r&w %s)   -    "
-			  "- E %3.0lf%% <%.12s>\n";
-char 	*genprocline1p	= "%s %s %s %s %s %s %s %s E %3.0lf%% <%.12s>\n";
+name_prio *
+makeargv(char *line, const char *linename) 
+{
+        int i=0;
+        char *p=line;
+        static name_prio vec[MAXITEMS];    // max MAXITEMS items
 
-char	*genprochdr2	= "\n  PID  SYSCPU  USRCPU  VGROW  RGROW  RDDSK  WRDSK "
-		     	  " ST EXC S %c%s CMD  %4d/%-4d\n";
-char 	*genproclina2	= "%5d %s %s %s %s %s %s  %c%c   - %c %3.0lf%% "
-	                  "%.14s\n";
-char 	*genprocline2	= "%s %s     0K     0K      -      -  %c%c %3d "
-			  "E %3.0lf%% <%.12s>\n";
+        char *name=0;
+        char *prio=0;
 
-char	*genprochdr3	= "\n  PID  SYSCPU  USRCPU  VGROW  RGROW USERNAME THR  "
-		     	  "ST EXC  S %c%s CMD  %4d/%-4d\n";
-char 	*genproclina3	= "%5d %s %s %s %s %-8.8s %3d  %c%c   -  %c %3.0lf%% "
-	                  "%.14s\n";
-char 	*genprocline3	= "%s %s     0K     0K %-8.8s   0  %c%c %3d  "
-			  "E %3.0lf%% <%.12s>\n";
-/***************************************************************************/
-char	*memprochdr	= "\n  PID MINFLT MAJFLT      VSTEXT "
-		     	  " VSIZE  RSIZE  VGROW  RGROW %c%s CMD  %4d/%-4d\n";
-char 	*memproclina	= "%5d %s %s      %s %s %s %s %s %3.0lf%% %.14s\n";
-char 	*memprocline	= "%s %s          0K     0K     0K     0K     0K"
-			  " %3.0lf%% <%.12s>\n";
-char 	*memproclinep	= "%5d %s %s          0K %s %s %s %s %3.0lf%% "
-                          "<%.12s>\n";
-/***************************************************************************/
-char	*dskprochdr1	= "\n  PID  READDISK AVGSIZE TOTSIZE   WRITEDISK "
-			  "AVGSIZE TOTSIZE %c%s CMD  %4d/%-4d\n";
-char 	*dskproclina1	= "%5d %s %s  %s   %s %s  %s %3.0lf%% %.14s\n";
-char 	*dskprocline1	= " (reads&writes              %s)   "
-			  "             %3.0lf%% <%.12s>\n";
-char 	*dskprocline1p	= "%5d %s %s  %s   %s %s  %s %3.0lf%% <%.12s>\n";
+        // find pair and scan it
+        while (*p && i<MAXITEMS-1) 
+        {
+                // skip initial spaces
+                while (*p && (*p==' ' || *p=='\t'))
+                {
+                        ++p;
+                }
+                if (! *p) 
+                {
+                        break;
+                }
+                name=p;
+                // found a new word; let's chop!
+                while (*p && *p !=':')
+                {
+                        ++p;
+                }
+                if (*p==':')
+                {
+                        *p=0;
+                }
+                else
+                {
+		        fprintf(stderr,
+	                "atoprc - %s: no name:prio pair for "
+                        "`%s'\n", name, linename);
+                        cleanstop(1);
+                }
 
-char	*dskprochdr2	= "\n  PID     RDDSK    WRDSK  WRDSK_CANCEL    "
-			  "                  %c%s CMD  %4d/%-4d\n";
-char 	*dskproclina2	= "%5d    %s   %s        %s                      "
-			  "%3.0lf%% %.14s\n";
-char 	*dskprocline2	= "        -        -             -       "
-			  "               %3.0lf%% <%.12s>\n";
-/***************************************************************************/
-char	*netprochdr	= "\n  PID TCPRCV AVSZ|TCPSND AVSZ|UDPRCV AVSZ"
-			  "|UDPSND AVSZ|RAWRS|%c%s CMD  %4d/%-4d\n";
-char 	*netproclina	= "%5d %s %s|%s %s|%s %s|%s %s|%2llu %2llu|"
-			  "%3.0lf%% %.14s\n";
-char 	*netprocline	= "                                        "
-			  "              %3.0lf%% <%.12s>\n";
-char 	*netproclinep	= "%5d %s %s|%s %s|%s %s|%s %s|%2llu %2llu|"
-			  "%3.0lf%% <%.12s>\n";
-/***************************************************************************/
-char	*varprochdr	= "\n  PID  PPID USERNAME GROUP      "
-			  "STDATE    STTIME  ST EXC  S %c%s CMD  %4d/%-4d\n";
-char 	*varproclina	= "%5d %5d %-8.8s %-8.8s %s %s %c%c   -  %c %3.0lf%% "
-	                  "%.14s\n";
-char 	*varprocline	= "%5d %-8.8s %-8.8s %s %s %c%c %3d  E %3.0lf%% "
-			  "<%.12s>\n";
-/***************************************************************************/
-char	*cmdprochdr	= "\n  PID %c%s COMMAND-LINE                           "
-			  "                    %4d/%-4d\n";
-char 	*cmdproclina	= "%5d %3.0lf%% %s\n";
-char 	*cmdprocline	= "%3.0lf%% <%.66s>\n";
-/***************************************************************************/
-char	*schprochdr	= "\n  PID TRUN TSLPI TSLPU  POLI NICE PRI RTPR "
-			  "CURCPU ST EXC  S %c%s CMD  %4d/%-4d\n";
-char 	*schproclina	= "%5d %4d %5d %5d  %-4s %4d %3d %4d %6d %-2s   -  "
-			  "%c %3.0lf%% %.14s\n";
-char 	*schprocline	= "    0     0     0     -    -   -    -      - "
-			  "%c%c %3d  E %3.0lf%% <%.12s>\n";
-/***************************************************************************/
-char	*totuserhdr	= "\nNPROCS  SYSCPU  USRCPU  VSIZE  RSIZE  RDDSK "
-			  "WRDSK RNET SNET %c%s USER %4d/%-4d\n";
-char 	*totuserlin	= "%s %s %s %s %s  %s %s %s %s "
-	                  "%3.0lf%% %.14s\n";
-/***************************************************************************/
-char	*totprochdr	= "\nNPROCS  SYSCPU  USRCPU  VSIZE  RSIZE  RDDSK "
-			  "WRDSK RNET SNET %c%s CMD  %4d/%-4d\n";
-char 	*totproclin	= "%s %s %s %s %s  %s %s %s %s "
-	                  "%3.0lf%% %.14s\n";
-/***************************************************************************/
+                /* now get number */
+                p++;
+                prio=p;
+                errno = 0;    /* To distinguish success/failure after call */
+
+                long lprio=strtol(p, &p, 10);
+
+                if (prio==p || errno == ERANGE || lprio >= INT_MAX || lprio <0)
+                {
+		        fprintf(stderr,
+			"atoprc - %s: item `%s` has "
+                        "invalid priority `", linename, name);
+                        while (*prio && *prio !=' ') {
+                            fputc(*prio, stderr);
+                            prio++;
+                        }
+                        fprintf(stderr, "'\n");
+                        cleanstop(1);
+                }
+                vec[i].name=name;
+                vec[i].prio=lprio;
+
+                ++i;
+        }
+                
+        vec[i].name=0;
+        return vec;
+
+}
+
+
+/*
+ * make_sys_prints: make array of sys_printpairs
+ * input: string, sys_printpair array, maxentries
+ */
+void
+make_sys_prints(sys_printpair *ar, int maxn, const char *pairs, 
+                sys_printdef *permissables[], const char *linename)
+{
+        name_prio *items;
+        int n=strlen(pairs);
+
+        char str[n+1];
+        strcpy(str, pairs);
+
+        items=makeargv(str, linename);
+
+        int i;
+        for(i=0; items[i].name && i<maxn-1; ++i) 
+        {
+                const char *name=items[i].name;
+                int j;
+                for (j=0; permissables[j] != 0; ++j)
+                {
+                        if (strcmp(permissables[j]->configname, name)==0)
+                        {
+                                ar[i].f=permissables[j];
+                                ar[i].prio=items[i].prio;
+                                break;
+                        }
+                }
+                if (permissables[j]==0)
+                {
+                        fprintf(stderr,
+				"atoprc - own system line: item %s invalid in %s line!\n",
+				name, linename);
+                        cleanstop(1);
+                }
+        }
+        ar[i].f=0;
+        ar[i].prio=0;
+}
+
+
+/*
+ * make_proc_prints: make array of proc_printpairs
+ * input: string, proc_printpair array, maxentries
+ */
+void 
+make_proc_prints(proc_printpair *ar, int maxn, const char *pairs, 
+const char *linename)
+{
+        name_prio *items;
+        int n=strlen(pairs);
+
+        char str[n+1];
+        strcpy(str, pairs);
+
+        items=makeargv(str, linename);
+
+        int i;
+        for(i=0; items[i].name && i<maxn-1; ++i) 
+        {
+                const char *name=items[i].name;
+                int j;
+                for (j=0; allprocpdefs[j] != 0; ++j)
+                {
+                        if (strcmp(allprocpdefs[j]->configname, name)==0)
+                        {
+                                ar[i].f=allprocpdefs[j];
+                                ar[i].prio=items[i].prio;
+                                break;
+                        }
+                }
+                if (allprocpdefs[j]==0)
+                {
+                        fprintf(stderr,
+				"atoprc - ownprocline: item %s invalid!\n",
+				name);
+                        cleanstop(1);
+                }
+        }
+        ar[i].f=0;
+        ar[i].prio=0;
+}
 
 /*
 ** calculate the total consumption on system-level for the 
@@ -340,852 +713,293 @@ char 	*totproclin	= "%s %s %s %s %s  %s %s %s %s "
 void
 totalcap(struct syscap *psc, struct sstat *sstat, struct pstat *pstat, int nact)
 {
-	register int	i;
+        register int    i;
 
-	psc->nrcpu      = sstat->cpu.nrcpu;
-	psc->availcpu	= sstat->cpu.all.stime +
-			  sstat->cpu.all.utime +
-			  sstat->cpu.all.ntime +
-			  sstat->cpu.all.itime +
-			  sstat->cpu.all.wtime +
-			  sstat->cpu.all.Itime +
-			  sstat->cpu.all.Stime +
-			  sstat->cpu.all.steal;
+        psc->nrcpu      = sstat->cpu.nrcpu;
+        psc->availcpu   = sstat->cpu.all.stime +
+                          sstat->cpu.all.utime +
+                          sstat->cpu.all.ntime +
+                          sstat->cpu.all.itime +
+                          sstat->cpu.all.wtime +
+                          sstat->cpu.all.Itime +
+                          sstat->cpu.all.Stime +
+                          sstat->cpu.all.steal +
+                          sstat->cpu.all.guest;
 
-	psc->availmem	= sstat->mem.physmem * pagesize/1024;
+        psc->availmem   = sstat->mem.physmem * pagesize/1024;
 
-	if (supportflags & PATCHSTAT)
-	{
-		/*
-		** calculate total number of accesses which have been
-		** issued by the active processes for disk and for network
-		*/
-		for (psc->availnet=psc->availdsk=0, i=0; i < nact; i++) 
-		{
-			psc->availnet += (pstat+i)->net.tcpsnd;
-			psc->availnet += (pstat+i)->net.tcprcv;
-			psc->availnet += (pstat+i)->net.udpsnd;
-			psc->availnet += (pstat+i)->net.udprcv;
-			psc->availnet += (pstat+i)->net.rawsnd;
-			psc->availnet += (pstat+i)->net.rawrcv;
+        if (supportflags & PATCHSTAT)
+        {
+                /*
+                ** calculate total number of accesses which have been
+                ** issued by the active processes for disk and for network
+                */
+                for (psc->availnet=psc->availdsk=0, i=0; i < nact; i++) 
+                {
+                        psc->availnet += (pstat+i)->net.tcpsnd;
+                        psc->availnet += (pstat+i)->net.tcprcv;
+                        psc->availnet += (pstat+i)->net.udpsnd;
+                        psc->availnet += (pstat+i)->net.udprcv;
+                        psc->availnet += (pstat+i)->net.rawsnd;
+                        psc->availnet += (pstat+i)->net.rawrcv;
 
-			psc->availdsk += (pstat+i)->dsk.rio;
-			psc->availdsk += (pstat+i)->dsk.wio;
-		}
-	}
-	else
-	{
-		for (psc->availnet=psc->availdsk=0, i=0; i < nact; i++) 
-		{
-			psc->availdsk += (pstat+i)->dsk.rsz;
-			psc->availdsk += (pstat+i)->dsk.wsz;
-		}
-	}
+                        psc->availdsk += (pstat+i)->dsk.rio;
+                        psc->availdsk += (pstat+i)->dsk.wio;
+                }
+        }
+        else
+        {
+                for (psc->availnet=psc->availdsk=0, i=0; i < nact; i++) 
+                {
+                        psc->availdsk += (pstat+i)->dsk.rsz;
+                        psc->availdsk += (pstat+i)->dsk.wsz;
+                }
+        }
 }
 
 /*
 ** calculate cumulative system- and user-time for all active processes
 */
 void
-pricumproc(struct pstat *pstat, int nact, int nproc, int nzomb, int nexit,
-                                int avgval, int nsecs)
+pricumproc(struct pstat *pstat, struct sstat *sstat, 
+           int nact, int nproc, int ntrun, int ntslpi, int ntslpu, int nzomb,
+           int nexit, int avgval, int nsecs)
 {
-	int 	i;
-	count_t totut, totst;
-        char	format1[16], format2[16], format3[16];
-	char	format4[16], format5[16];
 
-	for (i=totut=totst=0; i < nact; i++)
-	{
-		totut += (pstat+i)->cpu.utime;
-		totst += (pstat+i)->cpu.stime;
-	}
+        static int firsttime=1;
 
-	printg(prcline, val2cpustr(totst * 1000/hertz, format1),
-			val2cpustr(totut * 1000/hertz, format2),
-			val2valstr(nproc,           format3, 6, 0, 0),
-			val2valstr(nzomb,           format4, 4, 0, 0),
-			supportflags & ACCTACTIVE ?
-			       val2valstr(nexit, format5, 6, avgval, nsecs):
-			       "     ?");
+        if (firsttime)
+        {
+                firsttime=0;
+
+                if (sysprcline[0].f == 0)
+                {
+                    make_sys_prints(sysprcline, MAXITEMS,
+                        "PRCSYS:8 "
+                        "PRCUSER:8 "
+	                "BLANKBOX:0 "
+                        "PRCNPROC:7 "
+                        "PRCNRUNNING:5 "
+                        "PRCNSLEEPING:5 "
+                        "PRCNDSLEEPING:5 "
+                        "PRCNZOMBIE:5 "
+                        "PRCCLONES:4 "
+	                "BLANKBOX:0 "
+                        "PRCNNEXIT:6", prcsyspdefs, "built in sysprcline");
+                }
+                if (allcpuline[0].f == 0)
+                {
+                    make_sys_prints(allcpuline, MAXITEMS,
+	                "CPUSYS:9 "
+	                "CPUUSER:8 "
+	                "CPUIRQ:5 "
+	                "BLANKBOX:0 "
+	                "CPUIDLE:6 "
+	                "CPUWAIT:6 "
+	                "BLANKBOX:0 "
+                        "CPUSTEAL:2 "
+                        "CPUGUEST:3 "
+                        "CPUFREQ:4 "
+                        "CPUSCALE:4 ", cpusyspdefs, "built in allcpuline");
+                }
+
+                if (indivcpuline[0].f == 0)
+                {
+                    make_sys_prints(indivcpuline, MAXITEMS,
+	                "CPUISYS:9 "
+                        "CPUIUSER:8 "
+	                "CPUIIRQ:5 "
+	                "BLANKBOX:0 "
+	                "CPUIIDLE:6 "
+	                "CPUIWAIT:6 "
+	                "BLANKBOX:0 "
+                        "CPUISTEAL:2 "
+                        "CPUIGUEST:3 "
+                        "CPUIFREQ:4 "
+                        "CPUISCALE:4 ", cpisyspdefs, "built in indivcpuline");
+                }
+
+                if (cplline[0].f == 0)
+                {
+                    make_sys_prints(cplline, MAXITEMS,
+	                "CPLAVG1:4 "
+	                "CPLAVG5:3 "
+	                "CPLAVG15:2 "
+	                "BLANKBOX:0 "
+	                "CPLCSW:6 "
+	                "CPLINTR:5 "
+	                "BLANKBOX:0 "
+	                "CPLNUMCPU:1", cplsyspdefs, "built in cplline");
+                }
+
+                if (memline[0].f == 0)
+                {
+                    make_sys_prints(memline, MAXITEMS,
+	                "MEMTOT:2 "
+	                "MEMFREE:5 "
+	                "MEMCACHE:3 "
+	                "MEMDIRTY:1 "
+	                "MEMBUFFER:3 "
+	                "MEMSLAB:3 "
+	                "BLANKBOX:0 "
+	                "BLANKBOX:0 "
+	                "BLANKBOX:0 "
+	                "BLANKBOX:0", memsyspdefs, "built in memline");
+                }
+                if (swpline[0].f == 0)
+                {
+                    make_sys_prints(swpline, MAXITEMS,
+	                "SWPTOT:3 "
+	                "SWPFREE:4 "
+	                "BLANKBOX:0 "
+	                "BLANKBOX:0 "
+	                "BLANKBOX:0 "
+	                "BLANKBOX:0 "
+	                "BLANKBOX:0 "
+	                "BLANKBOX:0 "
+	                "SWPCOMMITTED:5 "
+	                "SWPCOMMITLIM:6", swpsyspdefs, "built in swpline");
+                }
+                if (pagline[0].f == 0)
+                {
+                    make_sys_prints(pagline, MAXITEMS,
+	                "PAGSCAN:3 "
+	                "PAGSTALL:1 "
+	                "BLANKBOX:0 "
+	                "PAGSWIN:4 "
+	                "PAGSWOUT:3", pagsyspdefs, "built in pagline");
+                }
+                if (dskline[0].f == 0)
+                {
+                    make_sys_prints(dskline, MAXITEMS,
+	                "DSKNAME:8 "
+	                "DSKBUSY:7 "
+	                "DSKNREAD:6 "
+	                "DSKNWRITE:6 "
+	                "DSKKBPERRD:4 "
+	                "DSKKBPERWR:4 "
+                        "DSKMBPERSECRD:5 "
+                        "DSKMBPERSECWR:5 "
+	                "DSKAVQUEUE:1 "
+	                "DSKAVIO:5", dsksyspdefs, "built in dskline");
+                }
+                if (nettransportline[0].f == 0)
+                {
+                    make_sys_prints(nettransportline, MAXITEMS,
+	                "NETTRANSPORT:9 "
+	                "NETTCPI:8 "
+	                "NETTCPO:8 "
+	                "NETUDPI:8 "
+	                "NETUDPO:8 "
+                        "NETTCPACTOPEN:6 "
+                        "NETTCPPASVOPEN:5 "
+                        "NETTCPRETRANS:4 "
+                        "NETTCPINERR:3 "
+                        "NETTCPORESET:2 "
+                        "NETUDPNOPORT:1 "
+                        "NETUDPINERR:3", nettranssyspdefs, "built in nettransportline");
+                }
+                if (netnetline[0].f == 0)
+                {
+                    make_sys_prints(netnetline, MAXITEMS,
+                        "NETNETWORK:5 "
+                        "NETIPI:4 "
+                        "NETIPO:4 "
+                        "NETIPFRW:4 "
+                        "NETIPDELIV:4 "
+	                "BLANKBOX:0 "
+	                "BLANKBOX:0 "
+	                "BLANKBOX:0 "
+                        "NETICMPIN:1 "
+                        "NETICMPOUT:1 ", netnetsyspdefs, "built in netnetline");
+                }
+                if (netinterfaceline[0].f == 0)
+                {
+                    make_sys_prints(netinterfaceline, MAXITEMS,
+	                "NETNAME:8 "
+	                "NETPCKI:7 "
+	                "NETPCKO:7 "
+	                "NETSPEEDIN:6 "
+	                "NETSPEEDOUT:6 "
+                        "NETCOLLIS:3 "
+                        "NETMULTICASTIN:2 "
+                        "NETRCVERR:5 "
+                        "NETSNDERR:5 "
+                        "NETRCVDROP:4 "
+                        "NETSNDDROP:4", netintfsyspdefs, "built in netinterfaceline");
+                }
+        }  // firsttime
+
+
+        int     i;
+        extraparam extra;
+
+
+        for (i=0, extra.totut=extra.totst=0; i < nact; i++)
+        {
+                extra.totut	+= (pstat+i)->cpu.utime;
+                extra.totst 	+= (pstat+i)->cpu.stime;
+        }
+
+        extra.nproc	= nproc;
+	extra.ntrun	= ntrun;
+	extra.ntslpi	= ntslpi;
+	extra.ntslpu	= ntslpu;
+        extra.nzomb	= nzomb;
+        extra.nexit	= nexit;
+        extra.avgval	= avgval;
+        extra.nsecs	= nsecs;
+
+        move(1,0);
+        showsysline(sysprcline, sstat, &extra, "PRC", 0, 0);
 }
 
-/*
-** print a line of general figures about one process
-*/
 void
-showgenproc(struct pstat *curstat, double perc, int nsecs, int avgval)
+setunavailactive(proc_printdef *item) 
 {
-	struct passwd 	*pwd;
-	char		*username, usname[16], exittype;
-
-	char		format1[16], format2[16];
-	char		format3[16], format4[16];
-	char		format5[16], format6[16];
-	char		format7[16], format8[16];
-
-	if (curstat->gen.state != 'E')
-	{
-		if (supportflags & PATCHSTAT)
-		{
-			/*
-			** show active processes for patched kernel
-			*/
-			printg(genproclina1,
-			   curstat->gen.pid,
-			   val2cpustr(curstat->cpu.stime*1000/hertz, format1),
-			   val2cpustr(curstat->cpu.utime*1000/hertz, format2),
-			   val2memstr(curstat->mem.vgrow*1024,
-						format3, KBFORMAT, 0, 0),
-			   val2memstr(curstat->mem.rgrow*1024,
-						format4, KBFORMAT, 0, 0),
-			   val2valstr(curstat->dsk.rio,     format5, 5,
-			                                    avgval, nsecs),
-			   val2valstr(curstat->dsk.wio,     format6, 5,
-			                                    avgval, nsecs),
-			   val2valstr(curstat->net.tcprcv +
-			              curstat->net.udprcv +
-			              curstat->net.rawrcv,  format7, 4,
-			                                    avgval, nsecs),
-			   val2valstr(curstat->net.tcpsnd +
-			              curstat->net.udpsnd +
-			              curstat->net.rawsnd,  format8, 4,
-			                                    avgval, nsecs),
-			   curstat->gen.state,
-			   perc, curstat->gen.name);
-		}
-		else
-		{
-			if (supportflags & IOSTAT)
-			{
-				/*
-				** show active processes for kernel with iostats
-				*/
-				printg(genproclina2,
-				   curstat->gen.pid,
-				   val2cpustr(curstat->cpu.stime*1000/hertz,
-								format1),
-				   val2cpustr(curstat->cpu.utime*1000/hertz,
-								format2),
-				   val2memstr(curstat->mem.vgrow*1024,
-						format3, KBFORMAT, 0, 0),
-				   val2memstr(curstat->mem.rgrow*1024,
-						format4, KBFORMAT, 0, 0),
-				   val2memstr(curstat->dsk.rsz*512,
-						format5, KBFORMAT, 0, 0),
-				   val2memstr(curstat->dsk.wsz*512,
-						format6, KBFORMAT, 0, 0),
-			   	   curstat->gen.excode & ~(INT_MAX) ?
-								'N' : '-',
-			   	   '-',
-			  	   curstat->gen.state,
-			   	   perc, curstat->gen.name);
-			}
-			else
-			{
-				/*
-				** show active processes for conventional kernel
-				**
-				** determine the user-name of process
-				*/
-				if ( (pwd = getpwuid(curstat->gen.ruid)) )
-				{
-					username = pwd->pw_name;
-				}
-				else
-				{
-					snprintf(usname, sizeof usname, "%d",
-							curstat->gen.ruid);
-					username = usname;
-				}
-	
-				printg(genproclina3,
-			   	curstat->gen.pid,
-			   	val2cpustr(curstat->cpu.stime*1000/hertz,
-								format1),
-			   	val2cpustr(curstat->cpu.utime*1000/hertz,
-								format2),
-			   	val2memstr(curstat->mem.vgrow*1024,
-						format3, KBFORMAT, 0, 0),
-			   	val2memstr(curstat->mem.rgrow*1024,
-						format4, KBFORMAT, 0, 0),
-			   	username,
-			   	curstat->gen.nthr,
-			   	curstat->gen.excode & ~(INT_MAX) ? 'N' : '-',
-			   	'-',
-			   	curstat->gen.state,
-			   	perc, curstat->gen.name);
-			}
-		}
-	}
-	else
-	{
-		/*
-		** show exited processes
-		*/
-		if (curstat->gen.pid == 0)
-			printg("    ? ");
-		else
-			printg("%5d ", curstat->gen.pid);
-
-		if (supportflags & PATCHSTAT)
-		{
-			/*
-			** show exited processes for patched kernel
-			*/
-			if (supportflags & PATCHACCT)
-			{
-				/*
-				** show exited processes for patched kernel
-				** including patches for accounting
-				*/
-				printg(genprocline1p,
-				   val2cpustr(curstat->cpu.stime*1000/hertz,
-								format1),
-				   val2cpustr(curstat->cpu.utime*1000/hertz,
-								format2),
-				   val2memstr(curstat->mem.vgrow*1024,
-						format3, KBFORMAT, 0, 0),
-				   val2memstr(curstat->mem.rgrow*1024,
-						format4, KBFORMAT, 0, 0),
-				   val2valstr(curstat->dsk.rio,
-						format5, 5, avgval, nsecs),
-				   val2valstr(curstat->dsk.wio,
-						    format6, 5, avgval, nsecs),
-				   val2valstr(curstat->net.tcprcv +
-				              curstat->net.udprcv +
-				              curstat->net.rawrcv,
-						 format7, 4, avgval, nsecs),
-				   val2valstr(curstat->net.tcpsnd +
-				              curstat->net.udpsnd +
-				              curstat->net.rawsnd,
-						 format8, 4, avgval, nsecs),
-				   perc, curstat->gen.name);
-			}
-			else
-			{
-				/*
-				** show exited processes for patched kernel
-				** without patches for accounting
-				*/
-				printg(genprocline1,
-				  val2cpustr(curstat->cpu.stime*1000/hertz,
-						format1),
-				  val2cpustr(curstat->cpu.utime*1000/hertz,
-						format2),
-				  val2valstr(curstat->dsk.rio,
-						format3, 6, avgval, nsecs),
-				  perc, curstat->gen.name);
-			}
-		}
-		else
-		{
-			if (curstat->gen.excode & 0xff)
-			{
-				if (curstat->gen.excode & 0x80)
-					exittype = 'C';
-				else
-					exittype = 'S';
-			}
-			else
-			{
-				exittype = 'E';
-			}
-	
-			if (supportflags & IOSTAT)
-			{
-				/*
-				** show exited processes for kernel with iostats
-				*/
-				printg(genprocline2,
-			  	  val2cpustr(curstat->cpu.stime*1000/hertz,
-								format1),
-			  	  val2cpustr(curstat->cpu.utime*1000/hertz,
-								format2),
-			  	  curstat->gen.excode & ~(INT_MAX) ? 'N' : '-',
-			  	  exittype,
-		  	  	  curstat->gen.excode & 0xff        ? 
-		 		 	 curstat->gen.excode     & 0x7f :
-			  		(curstat->gen.excode>>8) & 0xff,
-			  	  perc, curstat->gen.name);
-			}
-			else
-			{
-				/*
-				** show active processes for conventional kernel
-				**
-				** determine the user-name of process
-				*/
-				if ( (pwd = getpwuid(curstat->gen.ruid)) )
-				{
-					username = pwd->pw_name;
-				}
-				else
-				{
-					snprintf(usname, sizeof usname, "%d",
-							curstat->gen.ruid);
-					username = usname;
-				}
-
-				printg(genprocline3,
-			  	  val2cpustr(curstat->cpu.stime*1000/hertz,
-								format1),
-			  	  val2cpustr(curstat->cpu.utime*1000/hertz,
-								format2),
-			  	  username,
-			  	  curstat->gen.excode & ~(INT_MAX) ? 'N' : '-',
-			  	  exittype,
-		  	  	  curstat->gen.excode & 0xff        ? 
-				 	 curstat->gen.excode     & 0x7f :
-			  		(curstat->gen.excode>>8) & 0xff,
-			  	  perc, curstat->gen.name);
-			}
-		}
-	}
+        switch (item->width) 
+        {
+        case 4:
+                item->doactiveconvert=procprt_NOTAVAIL_4;
+                break;
+        case 5:
+                item->doactiveconvert=procprt_NOTAVAIL_5;
+                break;
+        case 6:
+                item->doactiveconvert=procprt_NOTAVAIL_6;
+                break;
+        case 7:
+                item->doactiveconvert=procprt_NOTAVAIL_7;
+                break;
+        }
 }
 
-/*
-** print a line of memory-figures about one process
-*/
 void
-showmemproc(struct pstat *curstat, double perc, int nsecs, int avgval)
+setunavailexit(proc_printdef *item) 
 {
-	char	format1[16], format2[16];
-	char	format3[16], format4[16];
-	char	format5[16], format6[16];
-	char	format7[16];
-
-	if (curstat->gen.state != 'E')
-	{
-		/*
-		** show process-info of active process
-		*/
-		printg(memproclina,
-		  curstat->gen.pid,
-		  val2valstr(curstat->mem.minflt,      format1, 6,
-			                               avgval, nsecs),
-		  val2valstr(curstat->mem.majflt,      format2, 6,
-			                               avgval, nsecs),
-		  val2memstr(curstat->mem.shtext*1024, format3, KBFORMAT, 0, 0),
-		  val2memstr(curstat->mem.vmem  *1024, format4, KBFORMAT, 0, 0),
-		  val2memstr(curstat->mem.rmem  *1024, format5, KBFORMAT, 0, 0),
-		  val2memstr(curstat->mem.vgrow *1024, format6, KBFORMAT, 0, 0),
-		  val2memstr(curstat->mem.rgrow *1024, format7, KBFORMAT, 0, 0),
-		  perc, curstat->gen.name);
-	}
-	else
-	{
-		/*
-		** show process-info of exited process
-		*/
-	   if (supportflags & PATCHACCT)
-	   {
-		printg(memproclinep,
-		  curstat->gen.pid,
-		  val2valstr(curstat->mem.minflt,      format1, 6,
-			                               avgval, nsecs),
-		  val2valstr(curstat->mem.majflt,      format2, 6,
-			                               avgval, nsecs),
-		  val2memstr(curstat->mem.vmem  *1024, format3, KBFORMAT, 0, 0),
-		  val2memstr(curstat->mem.rmem  *1024, format4, KBFORMAT, 0, 0),
-		  val2memstr(curstat->mem.vgrow *1024, format5, KBFORMAT, 0, 0),
-		  val2memstr(curstat->mem.rgrow *1024, format6, KBFORMAT, 0, 0),
-		  perc, curstat->gen.name);
-	   }
-	   else
-	   {
-		if (curstat->gen.pid == 0)
-			printg("    ? ");
-		else
-			printg("%5d ", curstat->gen.pid);
-
-		printg(memprocline,
-			  val2valstr(curstat->mem.minflt,     format1, 6,
-			                                      avgval, nsecs),
-			  val2valstr(curstat->mem.majflt,     format2, 6,
-			                                      avgval, nsecs),
-			  perc, curstat->gen.name);
-	   }
-	}
+        switch (item->width) 
+        {
+        case 4:
+                item->doexitconvert=procprt_NOTAVAIL_4;
+                break;
+        case 5:
+                item->doexitconvert=procprt_NOTAVAIL_5;
+                break;
+        case 6:
+                item->doexitconvert=procprt_NOTAVAIL_6;
+                break;
+        case 7:
+                item->doexitconvert=procprt_NOTAVAIL_7;
+                break;
+        }
 }
 
-/*
-** print a line of disk-figures about one process
-*/
-void
-showdskproc(struct pstat *curstat, double perc, int nsecs, int avgval)
-{
-	char		format1[16], format2[16], format3[16];
-	char		format4[16], format5[16], format6[16];
-	unsigned int	avgrsz, avgwsz;
-
-	if (supportflags & PATCHSTAT)
-	{
-		avgrsz = curstat->dsk.rio ?
-		         curstat->dsk.rsz * 512LL / curstat->dsk.rio : 0;
-		avgwsz = curstat->dsk.wio ?
-		         curstat->dsk.wsz * 512LL / curstat->dsk.wio : 0;
-
-		if (curstat->gen.state != 'E')
-		{
-			/*
-			** show process-info of active process
-			*/
-			printg(dskproclina1,
-			  curstat->gen.pid,
-			  val2valstr(curstat->dsk.rio,
-					format1, 9, avgval, nsecs),
-			  val2valstr(avgrsz, format2, 7, 0, 0),
-			  val2memstr(curstat->dsk.rsz*512LL,
-					format3, KBFORMAT, avgval, nsecs),
-			  val2valstr(curstat->dsk.wio, 
-					format4, 9, avgval, nsecs),
-			  val2valstr(avgwsz, format5, 7, 0, 0),
-			  val2memstr(curstat->dsk.wsz*512LL,
-					format6, KBFORMAT, avgval, nsecs),
-			  perc, curstat->gen.name);
-		}
-		else
-		{
-			/*
-			** show process-info of exited process
-			*/
-		   	if (supportflags & PATCHACCT)
-		   	{
-				printg(dskprocline1p,
-		  		  curstat->gen.pid,
-			  	  val2valstr(curstat->dsk.rio,
-					format1, 9, avgval, nsecs),
-			  	  val2valstr(avgrsz, format2, 7, 0, 0),
-			  	  val2memstr(curstat->dsk.rsz * 512LL,	
-					format3, KBFORMAT, avgval, nsecs),
-			  	  val2valstr(curstat->dsk.wio,
-					format4, 9, avgval, nsecs),
-			  	  val2valstr(avgwsz, format5, 7, 0, 0),
-			  	  val2memstr(curstat->dsk.wsz * 512LL,
-					format6, KBFORMAT, avgval, nsecs),
-			  	  perc, curstat->gen.name);
-		   	}
-		   	else
-		   	{
-				if (curstat->gen.pid == 0)
-					printg("    ? ");
-				else
-					printg("%5d ", curstat->gen.pid);
-	
-				printg(dskprocline1,
-				  val2valstr(curstat->dsk.rio,
-					format1, 9, avgval, nsecs),
-				  perc, curstat->gen.name);
-			}
-		}
-	}
-	else
-	{
-		if (supportflags & IOSTAT)
-		{
-			if (curstat->gen.state != 'E')
-			{
-				/*
-				** show process-info of active process
-				*/
-				printg(dskproclina2,
-				  curstat->gen.pid,
-				  val2memstr(curstat->dsk.rsz*512LL,
-					format1, KBFORMAT, avgval, nsecs),
-				  val2memstr(curstat->dsk.wsz*512LL,
-					format2, KBFORMAT, avgval, nsecs),
-				  val2memstr(curstat->dsk.cwsz*512LL,
-					format3, KBFORMAT, avgval, nsecs),
-				  perc, curstat->gen.name);
-			}
-			else
-			{
-				/*
-				** show process-info of exited process
-				*/
-				if (curstat->gen.pid == 0)
-					printg("    ? ");
-				else
-					printg("%5d ", curstat->gen.pid);
-
-				printg(dskprocline2,
-				  perc, curstat->gen.name);
-			}
-		}
-	}
-}
-
-/*
-** print a line of network-figures about one process
-*/
-void
-shownetproc(struct pstat *curstat, double perc, int nsecs, int avgval)
-{
-	char	format1[16], format2[16], format3[16], format4[16];
-	char	format5[16], format6[16], format7[16], format8[16];
-	int	avgtcpr, avgtcps, avgudpr, avgudps;
-
-	avgtcpr = curstat->net.tcprcv ?
-		  curstat->net.tcprsz / curstat->net.tcprcv : 0;
-	avgtcps = curstat->net.tcpsnd ?
-		  curstat->net.tcpssz / curstat->net.tcpsnd : 0;
-	avgudpr = curstat->net.udprcv ?
-		  curstat->net.udprsz / curstat->net.udprcv : 0;
-	avgudps = curstat->net.udpsnd ?
-		  curstat->net.udpssz / curstat->net.udpsnd : 0;
-
-	if (curstat->gen.state != 'E')
-	{
-		/*
-		** show process-info of active process
-		*/
-		printg(netproclina,
-		  curstat->gen.pid,
-		  val2valstr(curstat->net.tcprcv,      format1,  6,
-			                                      avgval, nsecs),
-		  val2valstr(avgtcpr,                  format2,  4, 0, 0),
-		  val2valstr(curstat->net.tcpsnd,      format3,  6,
-			                                      avgval, nsecs),
-		  val2valstr(avgtcps,                  format4,  4, 0, 0),
-		  val2valstr(curstat->net.udprcv,      format5,  6,
-			                                      avgval, nsecs),
-		  val2valstr(avgudpr,                  format6,  4, 0, 0),
-		  val2valstr(curstat->net.udpsnd,      format7,  6,
-			                                      avgval, nsecs),
-		  val2valstr(avgudps,                  format8,  4, 0, 0),
-		  curstat->net.rawrcv,
-		  curstat->net.rawsnd,
-		  perc, curstat->gen.name);
-	}
-	else
-	{
-		/*
-		** show process-info of exited process
-		*/
-	   	if (supportflags & PATCHACCT)
-	   	{
-			printg(netproclinep,
-		  	curstat->gen.pid,
-		  	val2valstr(curstat->net.tcprcv,      format1, 6,
-			                                      avgval, nsecs),
-		  	val2valstr(avgtcpr,                  format2, 4, 0, 0),
-		  	val2valstr(curstat->net.tcpsnd,      format3, 6,
-			                                      avgval, nsecs),
-		  	val2valstr(avgtcps,                  format4, 4, 0, 0),
-		  	val2valstr(curstat->net.udprcv,      format5, 6,
-			                                      avgval, nsecs),
-		  	val2valstr(avgudpr,                  format6, 4, 0, 0),
-		  	val2valstr(curstat->net.udpsnd,      format7, 6,
-			                                      avgval, nsecs),
-		  	val2valstr(avgudps,                  format8, 4, 0, 0),
-		  	curstat->net.rawrcv,
-		  	curstat->net.rawsnd,
-		  	perc, curstat->gen.name);
-	   	}
-	   	else
-	   	{
-			if (curstat->gen.pid == 0)
-				printg("    ? ");
-			else
-				printg("%5d ", curstat->gen.pid);
-
-			printg(netprocline, perc, curstat->gen.name);
-	  	}
-	}
-}
-
-/*
-** print a line of total resource consumption per user
-*/
-void
-showtotuser(struct pstat *curstat, double perc, int nsecs, int avgval)
-{
-	struct passwd 	*pwd;
-	char		numuser[16], *username;
-
-	char		format1[16], format2[16];
-	char		format3[16], format4[16];
-	char		format5[16], format6[16];
-	char		format7[16], format8[16];
-	char		format9[16];
-
-	/*
-	** determine the user-name of process
-	*/
-	if ( (pwd = getpwuid(curstat->gen.ruid)) == NULL)
-	{
-		snprintf(numuser, sizeof numuser, "%u", curstat->gen.ruid);
-		username = numuser;
-	}
-	else
-	{
-		username = pwd->pw_name;
-	}
-
-	printg(totuserlin,
-		val2valstr(curstat->gen.pid,           format1, 6, 0, 0),
-		val2cpustr(curstat->cpu.stime*1000/hertz, format2),
-		val2cpustr(curstat->cpu.utime*1000/hertz, format3),
-		val2memstr(curstat->mem.vmem *1024,    format4, KBFORMAT, 0, 0),
-		val2memstr(curstat->mem.rmem *1024,    format5, KBFORMAT, 0, 0),
-		val2valstr(curstat->dsk.rio,           format6, 5,
-								avgval, nsecs),
-		val2valstr(curstat->dsk.wio,           format7, 5,
-								avgval, nsecs),
-	   	val2valstr(curstat->net.tcprcv +
-		           curstat->net.udprcv +
-			   curstat->net.rawrcv,        format8, 4,
-								avgval, nsecs),
-		val2valstr(curstat->net.tcpsnd +
-			   curstat->net.udpsnd +
-			   curstat->net.rawsnd,        format9, 4,
-								avgval, nsecs),
-		perc, username);
-}
-
-/*
-** print a line of total resource consumption per program (process name)
-*/
-void
-showtotproc(struct pstat *curstat, double perc, int nsecs, int avgval)
-{
-	char		format1[16], format2[16];
-	char		format3[16], format4[16];
-	char		format5[16], format6[16];
-	char		format7[16], format8[16];
-	char		format9[16];
-
-	printg(totproclin,
-		val2valstr(curstat->gen.pid,           format1, 6, 0, 0),
-		val2cpustr(curstat->cpu.stime*1000/hertz, format2),
-		val2cpustr(curstat->cpu.utime*1000/hertz, format3),
-		val2memstr(curstat->mem.vmem *1024,    format4, KBFORMAT, 0, 0),
-		val2memstr(curstat->mem.rmem *1024,    format5, KBFORMAT, 0, 0),
-		val2valstr(curstat->dsk.rio,           format6, 5,
-								avgval, nsecs),
-		val2valstr(curstat->dsk.wio,           format7, 5,
-								avgval, nsecs),
-	   	val2valstr(curstat->net.tcprcv +
-		           curstat->net.udprcv +
-			   curstat->net.rawrcv,        format8, 4,
-								avgval, nsecs),
-		val2valstr(curstat->net.tcpsnd +
-			   curstat->net.udpsnd +
-			   curstat->net.rawsnd,        format9, 4,
-								avgval, nsecs),
-		perc, curstat->gen.name);
-}
-
-/*
-** print a line of (more or less) static info about one process
-*/
-void
-showvarproc(struct pstat *curstat, double perc, int nsecs, int avgval)
-{
-	char		format1[16], format2[16];
-	struct passwd 	*pwd;
-	struct group 	*grp;
-	char		*username, *groupname;
-	char		usname[16], grname[16];
-	char		exittype;
-
-	/*
-	** determine the user- and group-name of the process
-	*/
-	if ( (pwd = getpwuid(curstat->gen.ruid)) )
-	{
-		username = pwd->pw_name;
-	}
-	else
-	{
-		snprintf(usname, sizeof usname, "%d", curstat->gen.ruid);
-		username = usname;
-	}
-
-	if ( (grp = getgrgid(curstat->gen.rgid)) )
-	{
-		groupname = grp->gr_name;
-	}
-	else
-	{
-		snprintf(grname, sizeof grname, "%d", curstat->gen.rgid);
-		groupname = grname;
-	}
-
-	/*
-	** show process-info
-	*/
-	if (curstat->gen.state != 'E')
-	{
-		/*
-		** show process-info of active process
-		*/
-		printg(varproclina,
-		  	curstat->gen.pid,
-		  	curstat->gen.ppid,
-		  	username,
-		  	groupname,
-			convdate(curstat->gen.btime, format1),
-			convtime(curstat->gen.btime, format2),
-			curstat->gen.excode & ~(INT_MAX) ? 'N' : '-',
-			'-',
-		  	curstat->gen.state,
-		  	perc, curstat->gen.name);
-	}
-	else
-	{
-		/*
-		** show process-info of exited process
-		*/
-		if (curstat->gen.pid == 0)
-			printg("    ? ");
-		else
-			printg("%5d ", curstat->gen.pid);
-
-		if (curstat->gen.excode & 0xff)
-		{
-			if (curstat->gen.excode & 0x80)
-				exittype = 'C';
-			else
-				exittype = 'S';
-		}
-		else
-		{
-			exittype = 'E';
-		}
-
-		printg(varprocline,
-			curstat->gen.ppid,
-		  	username,
-		  	groupname,
-			convdate(curstat->gen.btime, format1),
-			convtime(curstat->gen.btime, format2),
-			curstat->gen.excode & ~(INT_MAX) ? 'N' : '-',
-			exittype,
-			curstat->gen.excode & 0xff        ?
-				curstat->gen.excode     & 0x7f :
-				(curstat->gen.excode>>8) & 0xff,
-		  	perc, curstat->gen.name);
-	}
-}
-
-/*
-** print a line containing the (almost) full command line
-*/
-void
-showcmdproc(struct pstat *curstat, double perc, int nsecs, int avgval)
-{
-	/*
-	** show process-info
-	*/
-	if (curstat->gen.state != 'E')
-	{
-		/*
-		** show process-info of active process
-		*/
-		printg(cmdproclina,
-		  	curstat->gen.pid,
-			perc,
-			curstat->gen.cmdline[0] ? 
-			         curstat->gen.cmdline : curstat->gen.name);
-	}
-	else
-	{
-		/*
-		** show process-info of exited process
-		*/
-		if (curstat->gen.pid == 0)
-			printg("    ? ");
-		else
-			printg("%5d ", curstat->gen.pid);
-
-		printg(cmdprocline,
-			perc, 
-			curstat->gen.cmdline[0] ? 
-			         curstat->gen.cmdline : curstat->gen.name);
-	}
-}
-
-/*
-** print a line of scheduling info about one process
-*/
-#define SCHED_NORMAL            0
-#define SCHED_FIFO              1
-#define SCHED_RR                2
 
 void
-showschproc(struct pstat *curstat, double perc, int nsecs, int avgval)
+setunavail(proc_printdef *item) 
 {
-	char	*pol, exittype;
-
-	switch (curstat->cpu.policy)
-	{
-	   case SCHED_NORMAL:
-		pol = "norm";
-		break;
-	   case SCHED_RR:
-		pol = "rr  ";
-		break;
-	   case SCHED_FIFO:
-		pol = "fifo";
-		break;
-	   default:
-		pol = "?";
-	}
-
-	/*
-	** show process-info
-	*/
-	if (curstat->gen.state != 'E')
-	{
-		/*
-		** show process-info of active process
-		*/
-		printg(schproclina,
-		  	curstat->gen.pid,
-		  	curstat->gen.nthrrun,
-		  	curstat->gen.nthrslpi,
-		  	curstat->gen.nthrslpu,
-		  	pol,
-		  	curstat->cpu.nice,
-		  	curstat->cpu.prio,
-		  	curstat->cpu.rtprio,
-		  	curstat->cpu.curcpu,
-			curstat->gen.excode & ~(INT_MAX) ? "N-" : "--",
-		  	curstat->gen.state,
-		  	perc, curstat->gen.name);
-	}
-	else
-	{
-		/*
-		** show process-info of exited process
-		*/
-		if (curstat->gen.pid == 0)
-			printg("    ?");
-		else
-			printg("%5d", curstat->gen.pid);
-
-		if (curstat->gen.excode & 0xff)
-		{
-			if (curstat->gen.excode & 0x80)
-				exittype = 'C';
-			else
-				exittype = 'S';
-		}
-		else
-		{
-			exittype = 'E';
-		}
-
-		printg(schprocline,
-			curstat->gen.excode & ~(INT_MAX) ? 'N' : '-',
-			exittype,
-		 	curstat->gen.excode & 0xff        ? 
-				 curstat->gen.excode     & 0x7f :
-				(curstat->gen.excode>>8) & 0xff,
-			perc, curstat->gen.name);
-	}
+        setunavailactive(item);
+        setunavailexit(item);
 }
 
 /*
@@ -1194,89 +1008,263 @@ showschproc(struct pstat *curstat, double perc, int nsecs, int avgval)
 void
 priphead(int curlist, int totlist, char showtype, char showorder, char autosort)
 {
-	char	columnprefix;
-	int	order = showorder;
+        char            columnprefix;
+        static int      firsttime=1;
 
-	/*
-	** determine the prefix for the sorting-column
-	** to indicate automatic mode
-	*/
-	if (autosort)
-		columnprefix = 'A';
-	else
-		columnprefix = ' ';
+        if (firsttime) 
+        { 
+                 // select disk, net functions
+                if (supportflags & PATCHACCT) 
+                {
+                        // disk/net patch and accounting patch
+                        make_proc_prints(genprocs, MAXITEMS, 
+                                "PID:10 SYSCPU:9 USRCPU:9 "
+                                "VGROW:8 RGROW:8 "
+                                "RDDSK:7 WRDSK:7 "
+                                "RNET:6 SNET:6 "
+                                "S:5 SORTITEM:10 CMD:10", 
+                                "built-in genprocs");
+                        make_proc_prints(dskprocs, MAXITEMS, 
+                                "PID:10 RDDSK:9 AVGRSZ:8 TOTRSZ:7 "
+                                "WRDSK:9 AVGWSZ:8 TOTWSZ:7 "
+                                "SORTITEM:10 CMD:10", 
+                                "built-in dskprocs");
 
-	/*
-	** print the header line
-	*/
-	switch (showtype)
-	{
-	   case MPROCGEN:
-		if (supportflags & PATCHSTAT)
-		{
-			printg(genprochdr1, columnprefix,
-				columnhead[order], curlist, totlist);
-		}
-		else 
-		{
-			if (supportflags & IOSTAT)
-				printg(genprochdr2, columnprefix,
-					columnhead[order], curlist, totlist);
-			else
-				printg(genprochdr3, columnprefix,
-					columnhead[order], curlist, totlist);
-		}
-		break;
+                        /* Set correct disk routines */
+                        procprt_RDDSK.doactiveconvert=procprt_NRDDSK_ae;
+                        procprt_RDDSK.doexitconvert=procprt_NRDDSK_ae;
+                        procprt_WRDSK.doactiveconvert=procprt_NWRDSK_a;
+                        procprt_WRDSK.doexitconvert=procprt_NWRDSK_a;
 
-	   case MPROCMEM:
-		printg(memprochdr, columnprefix, columnhead[order],
-						curlist, totlist);
-		break;
+			/* make IOSTAT items unavailable */
+                        setunavail(&procprt_WCANCEL_IOSTAT);
 
-	   case MPROCDSK:
-		if (supportflags & PATCHSTAT)
-		{
-			printg(dskprochdr1, columnprefix, columnhead[order],
-						curlist, totlist);
-		}
-		else
-		{
-			if (supportflags & IOSTAT)
-				printg(dskprochdr2, columnprefix,
-					columnhead[order], curlist, totlist);
-		}
-		break;
+			/* Set correct net routines */
+			procprt_RNET.doexitconvert=procprt_RNET_a;
+			procprt_SNET.doexitconvert=procprt_SNET_a;
+			procprt_TCPSND.doexitconvert=procprt_TCPSND_a;
+			procprt_TCPRCV.doexitconvert=procprt_TCPRCV_a;
+			procprt_RAWSND.doexitconvert=procprt_RAWSND_a;
+			procprt_RAWRCV.doexitconvert=procprt_RAWRCV_a;
+			procprt_UDPSND.doexitconvert=procprt_UDPSND_a;
+			procprt_UDPRCV.doexitconvert=procprt_UDPRCV_a;
+			procprt_TCPSASZ.doexitconvert=procprt_TCPSASZ_a;
+			procprt_TCPRASZ.doexitconvert=procprt_TCPRASZ_a;
+			procprt_UDPSASZ.doexitconvert=procprt_UDPSASZ_a;
+			procprt_UDPRASZ.doexitconvert=procprt_UDPRASZ_a;
+                } 
+                else if (supportflags & PATCHSTAT) 
+                {
+                        // just the disk/net patch, NO accounting patch
+                        make_proc_prints(genprocs, MAXITEMS, 
+                                "PID:10 SYSCPU:9 USRCPU:9 "
+                                "VGROW:8 RGROW:8 "
+                                "RDDSK:7 WRDSK:7 "
+                                "RNET:6 SNET:6 S:5 "
+                                "SORTITEM:10 CMD:10", 
+                                "built-in genprocs");
+                        make_proc_prints(dskprocs, MAXITEMS, 
+                                "PID:10 RDDSK:9 AVGRSZ:8 TOTRSZ:7 "
+                                "WRDSK:9 AVGWSZ:8 TOTWSZ:7 "
+                                "SORTITEM:10 CMD:10", 
+                                "built-in dskprocs");
 
-	   case MPROCNET:
-		printg(netprochdr, columnprefix, columnhead[order],
-						curlist, totlist);
-		break;
+                        /* Set correct disk routines */
+                        procprt_RDDSK.doactiveconvert=procprt_NRDDSK_ae;
+                        procprt_RDDSK.doexitconvert=procprt_NRDDSK_e;
+                        procprt_WRDSK.doactiveconvert=procprt_NWRDSK_a;
+                        procprt_WRDSK.doexitconvert=procprt_NWRDSK_e;
 
-	   case MPROCVAR:
-		printg(varprochdr, columnprefix, columnhead[order],
-						curlist, totlist);
-		break;
+                        /* make IOSTAT items unavailable */
+                        setunavail(&procprt_WCANCEL_IOSTAT);
 
-	   case MPROCARG:
-		printg(cmdprochdr, columnprefix, columnhead[order],
-						curlist, totlist);
-		break;
+                        /* make exit disk data unavailable */
+                        setunavailexit(&procprt_TOTRSZ);
+                        setunavailexit(&procprt_TOTWSZ);
 
-	   case MPROCSCH:
-		printg(schprochdr, columnprefix, columnhead[order],
-						curlist, totlist);
-		break;
+			/* Set correct net routines */
+			procprt_RNET.doexitconvert=procprt_RNET_e;
+			procprt_SNET.doexitconvert=procprt_SNET_e;
+			procprt_TCPSND.doexitconvert=procprt_TCPSND_e;
+			procprt_TCPRCV.doexitconvert=procprt_TCPRCV_e;
+			procprt_RAWSND.doexitconvert=procprt_RAWSND_e;
+			procprt_RAWRCV.doexitconvert=procprt_RAWRCV_e;
+			procprt_UDPSND.doexitconvert=procprt_UDPSND_e;
+			procprt_UDPRCV.doexitconvert=procprt_UDPRCV_e;
+			procprt_TCPSASZ.doexitconvert=procprt_TCPSASZ_e;
+			procprt_TCPRASZ.doexitconvert=procprt_TCPRASZ_e;
+			procprt_UDPSASZ.doexitconvert=procprt_UDPSASZ_e;
+			procprt_UDPRASZ.doexitconvert=procprt_UDPRASZ_e;
+                } 
+                else if (supportflags & IOSTAT) 
+                {
+                        // No patches, iostat data is available
+                        make_proc_prints(genprocs, MAXITEMS, 
+                                "PID:10 RUID:3 EUID:2 THR:4 "
+                                "SYSCPU:9 USRCPU:9 "
+                                "VGROW:8 RGROW:8 "
+                                "RDDSK:7 WRDSK:7 "
+                                "ST:6 EXC:6 S:6 "
+                                "CPUNR:5 SORTITEM:10 CMD:10", 
+                                "built-in genprocs");
+                        make_proc_prints(dskprocs, MAXITEMS, 
+                                "PID:10 RDDSK:9 "
+                                "WRDSK:9 WCANCL:8 "
+                                "SORTITEM:10 CMD:10", 
+                                "built-in dskprocs");
 
-	   case MCUMUSER:
-		printg(totuserhdr, columnprefix, columnhead[order],
-						curlist, totlist);
-		break;
+                        /* make path based data unavailable */
+                        procprt_RDDSK.doactiveconvert=procprt_RDDSK_IOSTAT_a;
+                        procprt_RDDSK.doexitconvert=procprt_RDDSK_IOSTAT_e;
+                        procprt_WRDSK.doactiveconvert=procprt_WRDSK_IOSTAT_a;
+                        procprt_WRDSK.doexitconvert=procprt_WRDSK_IOSTAT_e;
+                        setunavail(&procprt_TOTRSZ);
+                        setunavail(&procprt_TOTWSZ);
+                        setunavail(&procprt_AVGRSZ);
+                        setunavail(&procprt_AVGWSZ);
+                        setunavail(&procprt_TCPRCV);
+                        setunavail(&procprt_TCPRASZ);
+                        setunavail(&procprt_TCPSND);
+                        setunavail(&procprt_TCPSASZ);
+                        setunavail(&procprt_RAWRCV);
+                        setunavail(&procprt_RAWSND);
+                        setunavail(&procprt_UDPRCV);
+                        setunavail(&procprt_UDPRASZ);
+                        setunavail(&procprt_UDPSND);
+                        setunavail(&procprt_UDPSASZ);
+                        setunavail(&procprt_RNET);
+                        setunavail(&procprt_SNET);
+                } 
+                else 
+                {
+                        // No patches, no iostat data available
+                        make_proc_prints(genprocs, MAXITEMS, 
+                                "PID:10 SYSCPU:9 USRCPU:9 "
+                                "VGROW:8 RGROW:8 RUID:4 EUID:3 "
+                                "THR:7 ST:7 EXC:7 S:7 "
+                                "SORTITEM:10 CMD:10", 
+                                "built-in genprocs");
 
-	   case MCUMPROC:
-		printg(totprochdr, columnprefix, columnhead[order],
-						curlist, totlist);
-		break;
-	}
+                        /* disable iostat and patch based items */
+                        setunavail(&procprt_RDDSK);
+                        setunavail(&procprt_WRDSK);
+                        setunavail(&procprt_WCANCEL_IOSTAT);
+                        setunavailexit(&procprt_TOTRSZ);
+                        setunavailexit(&procprt_TOTWSZ);
+                        setunavail(&procprt_TOTRSZ);
+                        setunavail(&procprt_TOTWSZ);
+                        setunavail(&procprt_AVGRSZ);
+                        setunavail(&procprt_AVGWSZ);
+                        setunavail(&procprt_TCPRCV);
+                        setunavail(&procprt_TCPRASZ);
+                        setunavail(&procprt_TCPSND);
+                        setunavail(&procprt_TCPSASZ);
+                        setunavail(&procprt_RAWRCV);
+                        setunavail(&procprt_RAWSND);
+                        setunavail(&procprt_UDPRCV);
+                        setunavail(&procprt_UDPRASZ);
+                        setunavail(&procprt_UDPSND);
+                        setunavail(&procprt_UDPSASZ);
+                        setunavail(&procprt_RNET);
+                        setunavail(&procprt_SNET);
+                }
+
+                make_proc_prints(memprocs, MAXITEMS, 
+                        "PID:10 MINFLT:2 MAJFLT:3 VSTEXT:4 "
+                        "VSIZE:5 RSIZE:6 VGROW:7 RGROW:8 RUID:1 EUID:0 "
+                        "SORTITEM:9 CMD:10", 
+                        "built-in memprocs");
+
+                make_proc_prints(schedprocs, MAXITEMS, 
+                        "PID:10 TRUN:7 TSLPI:7 TSLPU:7 POLI:8 "
+                        "NICE:9 PRI:9 RTPR:9 CPUNR:8 ST:8 EXC:8 "
+                        "S:8 SORTITEM:10 CMD:10", 
+                        "built-in schedprocs");
+
+                make_proc_prints(netprocs, MAXITEMS, 
+                        "PID:10 TCPRCV:9 TCPRASZ:4 TCPSND:9 "
+                        "TCPSASZ:4 UDPRCV:8 UDPRASZ:3 UDPSND:8 UDPSASZ:3 "
+                        "RAWRCV:7 RAWSND:7 SORTITEM:10 CMD:10", 
+                        "built-in netprocs");
+
+                make_proc_prints(varprocs, MAXITEMS,
+                        "PID:10 PPID:9 RUID:8 RGID:8 EUID:5 EGID:4 "
+     			"SUID:3 SGID:2 FSUID:3 FSGID:2 "
+                        "STDATE:7 STTIME:7 ENDATE:5 ENTIME:5 "
+			"ST:6 EXC:6 S:6 SORTITEM:10 CMD:10", 
+                        "built-in varprocs");
+
+                make_proc_prints(cmdprocs, MAXITEMS,
+                        "PID:10 SORTITEM:10 COMMAND-LINE:10", 
+                        "built-in cmdprocs");
+
+                make_proc_prints(totusers, MAXITEMS, 
+                        "NPROCS:10 SYSCPU:9 USRCPU:9 VSIZE:8 "
+                        "RSIZE:8 RDDSK:7 WRDSK:7 RNET:6 SNET:6 "
+                        "SORTITEM:10 RUID:10", 
+                        "built-in totusers");
+
+                make_proc_prints(totprocs, MAXITEMS, 
+                        "NPROCS:10 SYSCPU:9 USRCPU:9 VSIZE:8"
+                        "RSIZE:8 RDDSK:7 WRDSK:7 RNET:6 SNET:6" 
+                        "SORTITEM:10 CMD:10", 
+                        "built-in totprocs");
+        }
+
+        /*
+        ** determine the prefix for the sorting-column
+        ** to indicate automatic mode
+        */
+        if (autosort)
+                columnprefix = 'A';
+        else
+                columnprefix = ' ';
+
+        /*
+        ** print the header line
+        */
+        switch (showtype)
+        {
+           case MPROCGEN:
+                showhdrline(genprocs, curlist, totlist, showorder, autosort);
+                break;
+
+           case MPROCMEM:
+                showhdrline(memprocs, curlist, totlist, showorder, autosort);
+                break;
+
+           case MPROCDSK:
+                showhdrline(dskprocs, curlist, totlist, showorder, autosort);
+                break;
+
+           case MPROCNET:
+                showhdrline(netprocs, curlist, totlist, showorder, autosort);
+                break;
+
+           case MPROCVAR:
+                showhdrline(varprocs, curlist, totlist, showorder, autosort);
+                break;
+
+           case MPROCARG:
+                showhdrline(cmdprocs, curlist, totlist, showorder, autosort);
+                break;
+
+           case MPROCOWN:
+                showhdrline(ownprocs, curlist, totlist, showorder, autosort);
+                break;
+
+           case MPROCSCH:
+                showhdrline(schedprocs, curlist, totlist, showorder, autosort);
+                break;
+
+           case MCUMUSER:
+                showhdrline(totusers, curlist, totlist, showorder, autosort);
+                break;
+
+           case MCUMPROC:
+                showhdrline(totprocs, curlist, totlist, showorder, autosort);
+                break;
+        }
 }
 
 
@@ -1285,718 +1273,593 @@ priphead(int curlist, int totlist, char showtype, char showorder, char autosort)
 */
 int
 priproc(struct pstat *pstat, int firstproc, int lastproc, int curline,
-	int curlist, int totlist, char showtype, char showorder,
-	struct syscap *sb, struct selection *sel, int nsecs, int avgval)
+        int curlist, int totlist, char showtype, char showorder,
+        struct syscap *sb, struct selection *sel, int nsecs, int avgval)
 {
-	register int		i;
-	register struct pstat	*curstat;
-	double			perc;
+        register int            i;
+        register struct pstat   *curstat;
+        double                  perc;
 
-	/*
-	** print info per actual process and maintain totals
-	*/
-	for (i=firstproc; i < lastproc; i++)
-	{
-		if (screen && curline >= LINES)	/* screen filled entirely ? */
-			break;
+        /*
+        ** print info per actual process and maintain totals
+        */
+        for (i=firstproc; i < lastproc; i++)
+        {
+                if (screen && curline >= LINES) /* screen filled entirely ? */
+                        break;
 
-		curstat = pstat+i;
+                curstat = pstat+i;
 
-		/*
-		** calculate occupation-percentage of this process
-		** depending on selected resource
-		*/
-		switch (showorder) 
-		{
-		   case MSORTCPU:
-			perc = 0.0;
+                /*
+                ** calculate occupation-percentage of this process
+                ** depending on selected resource
+                */
+                switch (showorder) 
+                {
+                   case MSORTCPU:
+                        perc = 0.0;
 
-			if (sb->availcpu)
-			{
-				perc = (double)(curstat->cpu.stime +
-				                curstat->cpu.utime  ) *
-						100.0 /
-						(sb->availcpu / sb->nrcpu);
+                        if (sb->availcpu)
+                        {
+                                perc = (double)(curstat->cpu.stime +
+                                                curstat->cpu.utime  ) *
+                                                100.0 /
+                                                (sb->availcpu / sb->nrcpu);
 
-				if (perc > 100.0 * sb->nrcpu)
-					perc = 100.0 * sb->nrcpu;
+                                if (perc > 100.0 * sb->nrcpu)
+                                        perc = 100.0 * sb->nrcpu;
 
-				if (perc > 100.0 * curstat->gen.nthr)
-					perc = 100.0 * curstat->gen.nthr;
-			}
-			break;
+                                if (perc > 100.0 * curstat->gen.nthr)
+                                        perc = 100.0 * curstat->gen.nthr;
+                        }
+                        break;
 
-		   case MSORTMEM:
-			perc = 0.0;
+                   case MSORTMEM:
+                        perc = 0.0;
 
-			if (sb->availmem)
-			{
-				perc = (double)curstat->mem.rmem *
+                        if (sb->availmem)
+                        {
+                                perc = (double)curstat->mem.rmem *
                                                100.0 / sb->availmem;
 
-				if (perc > 100.0)
-					perc = 100.0;
-			}
-			break;
+                                if (perc > 100.0)
+                                        perc = 100.0;
+                        }
+                        break;
 
-		   case MSORTDSK:
-			perc = 0.0;
+                   case MSORTDSK:
+                        perc = 0.0;
 
-			if (supportflags & PATCHSTAT)
-			{
-				if (sb->availdsk)
-				{
-					perc = (double)(curstat->dsk.rio +
-					                curstat->dsk.wio  ) *
-				        		100.0 / sb->availdsk;
+                        if (supportflags & PATCHSTAT)
+                        {
+                                if (sb->availdsk)
+                                {
+                                        perc = (double)(curstat->dsk.rio +
+                                                        curstat->dsk.wio  ) *
+                                                        100.0 / sb->availdsk;
 
-					if (perc > 100.0)
-						perc = 100.0;
-				}
-			}
-			else
-			{
-				if (sb->availdsk)
-				{
-					perc = (double)(curstat->dsk.rsz +
-					                curstat->dsk.wsz  ) *
-				        		100.0 / sb->availdsk;
+                                        if (perc > 100.0)
+                                                perc = 100.0;
+                                }
+                        }
+                        else
+                        {
+                                if (sb->availdsk)
+                                {
+                                        perc = (double)(curstat->dsk.rsz +
+                                                        curstat->dsk.wsz  ) *
+                                                        100.0 / sb->availdsk;
 
-					if (perc > 100.0)
-						perc = 100.0;
-				}
-			}
-			break;
+                                        if (perc > 100.0)
+                                                perc = 100.0;
+                                }
+                        }
+                        break;
 
-		   case MSORTNET:
-			perc = 0.0;
+                   case MSORTNET:
+                        perc = 0.0;
 
-			if (sb->availnet)
-			{
-				perc = (double)(curstat->net.tcpsnd +
-						curstat->net.tcprcv +
-						curstat->net.udpsnd +
-						curstat->net.udprcv +
-						curstat->net.rawsnd +
-						curstat->net.rawrcv ) *
-						100.0 / sb->availnet;
+                        if (sb->availnet)
+                        {
+                                perc = (double)(curstat->net.tcpsnd +
+                                                curstat->net.tcprcv +
+                                                curstat->net.udpsnd +
+                                                curstat->net.udprcv +
+                                                curstat->net.rawsnd +
+                                                curstat->net.rawrcv ) *
+                                                100.0 / sb->availnet;
 
-				if (perc > 100.0)
-					perc = 100.0;
-			}
-			break;
+                                if (perc > 100.0)
+                                        perc = 100.0;
+                        }
+                        break;
 
-		   default:
-			perc = 0.0;
-		}
-
-		/*
-		** check if only processes of a particular user
-		** should be shown
-		*/
-		if (sel->userid[0] != USERSTUB)
-		{
-			int	u = 0;
-
-		     	while (sel->userid[u] != USERSTUB)
-			{
-				if (sel->userid[u] == curstat->gen.ruid)
-					break;
-				u++;
-			}
-
-			if (sel->userid[u] != curstat->gen.ruid)
-				continue;
-		}
+                   default:
+                        perc = 0.0;
+                }
 
 		/*
-		** check if only processes with a particular name
-		** should be shown
-		*/
-		if (sel->procnamesz &&
-		    regexec(&(sel->procregex), curstat->gen.name, 0, NULL, 0))
+ 		** check if the process-filter or user-filter suppresses
+		** this process
+ 		*/
+		if (procsuppress(curstat, sel))
 			continue;
 
-		/*
-		** now do the formatting of output
-		*/
-		switch (showtype)
-		{
-		   case MPROCGEN:
-			showgenproc(curstat, perc, nsecs, avgval);
-			break;
+                /*
+                ** now do the formatting of output
+                */
+                if (screen) {
+                        move(curline,0);
+                }
 
-		   case MPROCMEM:
-			showmemproc(curstat, perc, nsecs, avgval);
-			break;
+                switch (showtype)
+                {
+                   case MPROCGEN:
+                        showprocline(genprocs, curstat, perc, nsecs, avgval);
+                        break;
 
-		   case MPROCDSK:
-			showdskproc(curstat, perc, nsecs, avgval);
-			break;
+                   case MPROCMEM:
+                        showprocline(memprocs, curstat, perc, nsecs, avgval);
+                        break;
 
-		   case MPROCNET:
-			shownetproc(curstat, perc, nsecs, avgval);
-			break;
+                   case MPROCDSK:
+                        showprocline(dskprocs, curstat, perc, nsecs, avgval);
+                        break;
 
-		   case MPROCVAR:
-			showvarproc(curstat, perc, nsecs, avgval);
-			break;
+                   case MPROCNET:
+                        showprocline(netprocs, curstat, perc, nsecs, avgval);
+                        break;
 
-		   case MPROCARG:
-			showcmdproc(curstat, perc, nsecs, avgval);
-			break;
+                   case MPROCVAR:
+                        showprocline(varprocs, curstat, perc, nsecs, avgval);
+                        break;
 
-		   case MPROCSCH:
-			showschproc(curstat, perc, nsecs, avgval);
-			break;
+                   case MPROCARG:
+                        showprocline(cmdprocs, curstat, perc, nsecs, avgval);
+                        break;
 
-		   case MCUMUSER:
-			showtotuser(curstat, perc, nsecs, avgval);
-			break;
+                   case MPROCOWN:
+                        showprocline(ownprocs, curstat, perc, nsecs, avgval);
+                        break;
 
-		   case MCUMPROC:
-			showtotproc(curstat, perc, nsecs, avgval);
-			break;
-		}
+                   case MPROCSCH:
+                        showprocline(schedprocs, curstat, perc, nsecs, avgval);
+                        break;
 
-		curline++;
-	}
+                   case MCUMUSER:
+                        showprocline(totusers, curstat, perc, nsecs, avgval);
+                        break;
 
-	return curline;
+                   case MCUMPROC:
+                        showprocline(totprocs, curstat, perc, nsecs, avgval);
+                        break;
+                }
+
+                curline++;
+        }
+
+        return curline;
 }
 
 
 /*
 ** print the system-wide statistics
 */
+static void	pridisklike(extraparam *, struct perdsk *, char *,
+		         char *, int, unsigned int *, int *, int, int);
 int
 prisyst(struct sstat *sstat, int curline, int nsecs, int avgval,
         int fixedhead, int usecolors, char *highorderp,
-        int maxcpulines, int maxdsklines, int maxintlines)
+        int maxcpulines, int maxdsklines, int maxmddlines,
+	int maxlvmlines, int maxintlines)
 {
-	register int	i, lin;
-	count_t		cputot, percputot, mstot, busy;
-	count_t		udpin, udpout, ipin, ipout, ipfrw, ipindel;
-	unsigned int	badness, highbadness=0;
-	char		format1[16], format2[16], format3[16];
-	char		format4[16], format5[16];
-	char		busyval[5], coloron=0;
-
-	/*
-	** CPU statistics
-	*/
-	cputot = sstat->cpu.all.stime + sstat->cpu.all.utime +
-	         sstat->cpu.all.ntime + sstat->cpu.all.itime +
-	         sstat->cpu.all.wtime + sstat->cpu.all.Itime +
-	         sstat->cpu.all.Stime + sstat->cpu.all.steal;
-
-	busy   = (cputot - sstat->cpu.all.itime - sstat->cpu.all.wtime)
-				* 100.0 / cputot;
-
-	if (cpubadness)
-		badness = busy * 100 / cpubadness;
-	else
-		badness = 0;
-
-	if (highbadness < badness)
-	{
-		highbadness = badness;
-		*highorderp = MSORTCPU;
-	}
-
-	if (cputot == 0)
-		cputot = 1;		/* avoid divide-by-zero */
-
-	percputot = cputot / sstat->cpu.nrcpu;
-
-	if (percputot == 0)
-		percputot = 1;		/* avoid divide-by-zero */
-
-	coloron   = syscolorlabel("CPU", usecolors, badness);
-
-	printg(" | sys %6.0f%% | user %6.0f%% | "
-	       "irq  %6.0f%% | idle %6.0f%% | wait %6.0f%% |\n",
-		(double) (sstat->cpu.all.stime * 100.0) / percputot,
-		(double)((sstat->cpu.all.utime + sstat->cpu.all.ntime)
-		                               * 100.0) / percputot,
-		(double)((sstat->cpu.all.Itime + sstat->cpu.all.Stime)
-		                               * 100.0) / percputot,
-		(double) (sstat->cpu.all.itime * 100.0) / percputot,
-		(double) (sstat->cpu.all.wtime * 100.0) / percputot);
-
-	if (coloron)
-		syscoloroff(coloron);
-	
-	curline++;
-
-	if (sstat->cpu.all.steal)	/* only for virtual machines ... */
-	{
-		coloron   = syscolorlabel("CPU", usecolors, badness);
-
-		printg(" | steal %4.0f%% | stl/cpu %3.0f%% | "
-	       		"             |              |              |\n",
-			(double) (sstat->cpu.all.steal * 100.0) / percputot,
-			(double) (sstat->cpu.all.steal * 100.0) / cputot);
-
-		if (coloron)
-			syscoloroff(coloron);
-
-		curline++;
-	}
-
-	if (sstat->cpu.nrcpu > 1)
-	{
-		for (i=lin=0; i < sstat->cpu.nrcpu && lin < maxcpulines; i++)
-		{
-			percputot =  sstat->cpu.cpu[i].stime +
-			             sstat->cpu.cpu[i].utime +
-	                             sstat->cpu.cpu[i].ntime +
-			             sstat->cpu.cpu[i].itime +
-	         	             sstat->cpu.cpu[i].wtime +
-			             sstat->cpu.cpu[i].Itime +
-	         	             sstat->cpu.cpu[i].Stime +
-	         	             sstat->cpu.cpu[i].steal;
-
-			if (percputot == (sstat->cpu.cpu[i].itime +
-			                  sstat->cpu.cpu[i].wtime  ) &&
-			                  !fixedhead                   )
-				continue;	/* inactive cpu */
-
-			busy   = (percputot - sstat->cpu.cpu[i].itime 
-			                    - sstat->cpu.cpu[i].wtime)
-							* 100.0 / percputot;
-
-			if (cpubadness)
-				badness = busy * 100 / cpubadness;
-			else
-				badness = 0;
-
-			if (highbadness < badness)
-			{
-				highbadness = badness;
-				*highorderp = MSORTCPU;
-			}
-
-			if (percputot == 0)
-				percputot = 1; /* avoid divide-by-zero */
-
-
-			coloron = syscolorlabel("cpu", usecolors, badness);
-
-			printg(" | sys %6.0f%% | "
-			       "user %6.0f%% | irq  %6.0f%% | "
-			       "idle %6.0f%% | cpu%03d w%3.0f%% |\n",
-				(double) (sstat->cpu.cpu[i].stime 
-						* 100.0) / percputot,
-				(double)((sstat->cpu.cpu[i].utime +
-				          sstat->cpu.cpu[i].ntime)
-			                       	* 100.0) / percputot,
-				(double)((sstat->cpu.cpu[i].Itime +
-				          sstat->cpu.cpu[i].Stime)
-			                       	* 100.0) / percputot,
-				(double) (sstat->cpu.cpu[i].itime
-						* 100.0) / percputot,
-				sstat->cpu.cpu[i].cpunr,
-				(double) (sstat->cpu.cpu[i].wtime
-						* 100.0) / percputot);
-
-			if (coloron)
-				syscoloroff(coloron);
-
-			curline++;
-			lin++;
-		}
-	}
-
-	/*
-	** other CPU-related statistics
-	*/
-	if (sstat->cpu.lavg1  > 999.0  ||
-	    sstat->cpu.lavg5  > 9999.0 ||
-	    sstat->cpu.lavg15 > 999.0    )
-	{
-		printg("CPL | avg1 %6.0f | avg5 %7.0f | avg15 %6.0f | csw %s"
- 		       " | intr %s |\n",
-			sstat->cpu.lavg1,
-			sstat->cpu.lavg5,
-			sstat->cpu.lavg15,
-			val2valstr(sstat->cpu.csw,    format1, 8,avgval,nsecs),
-			val2valstr(sstat->cpu.devint, format2, 7,avgval,nsecs));
-	}
-	else
-	{
-		printg("CPL | avg1 %6.2f | avg5 %7.2f | avg15 %6.2f | csw %s"
- 		       " | intr %s |\n",
-			sstat->cpu.lavg1,
-			sstat->cpu.lavg5,
-			sstat->cpu.lavg15,
-			val2valstr(sstat->cpu.csw,    format1, 8,avgval,nsecs),
-			val2valstr(sstat->cpu.devint, format2, 7,avgval,nsecs));
-	}
-
-	curline++;
-
-	/*
-	** MEMORY statistics
-	*/
-	busy   = (sstat->mem.physmem - sstat->mem.freemem
- 	                             - sstat->mem.cachemem
-	                             - sstat->mem.buffermem)
-						* 100.0 / sstat->mem.physmem;
-
-	if (membadness)
-		badness = busy * 100 / membadness;
-	else
-		badness = 0;
-
-	if (highbadness < badness)
-	{
-		highbadness = badness;
-		*highorderp = MSORTMEM;
-	}
-
-	coloron = syscolorlabel("MEM", usecolors, badness);
-
-	printg(" | tot  %s | free  %s | cache %s | buff  %s | slab  %s |\n",
-		val2memstr(sstat->mem.physmem   * pagesize, format1,
-							MBFORMAT, 0, 0),
-		val2memstr(sstat->mem.freemem   * pagesize, format2,
-							MBFORMAT, 0, 0),
-		val2memstr(sstat->mem.cachemem  * pagesize, format3,
-							MBFORMAT, 0, 0),
-		val2memstr(sstat->mem.buffermem * pagesize, format4,
-							MBFORMAT, 0, 0),
-		val2memstr(sstat->mem.slabmem   * pagesize, format5,
-							MBFORMAT, 0, 0));
-
-	if (coloron)
-		syscoloroff(coloron);
-
-	curline++;
-
-	/*
-	** SWAP statistics
-	*/
-	busy   = (sstat->mem.totswap - sstat->mem.freeswap)
-				* 100.0 / sstat->mem.totswap;
-
-	if (swpbadness)
-		badness = busy * 100 / swpbadness;
-	else
-		badness = 0;
-
-	if (highbadness < badness)
-	{
-		highbadness = badness;
-		*highorderp = MSORTMEM;
-	}
-
-	if (sstat->mem.commitlim && sstat->mem.committed > sstat->mem.commitlim)
-		 badness = 100;		/* force colored output */
-
-	coloron = syscolorlabel("SWP", usecolors, badness);
-
-	printg(" | tot  %s | free  %s |              "
-	       "| vmcom %s | vmlim %s |\n",
-		val2memstr(sstat->mem.totswap   * pagesize, format1,
-							MBFORMAT, 0, 0),
-		val2memstr(sstat->mem.freeswap  * pagesize, format2,
-							MBFORMAT, 0, 0),
-		val2memstr(sstat->mem.committed * pagesize, format3,
-							MBFORMAT, 0, 0),
-		val2memstr(sstat->mem.commitlim * pagesize, format4,
-							MBFORMAT, 0, 0));
-
-	if (coloron)
-		syscoloroff(coloron);
-
-	curline++;
-
-	/*
-	** PAGING statistics
-	*/
-	if (fixedhead             ||
-	    sstat->mem.pgscans    ||
-	    sstat->mem.allocstall ||
-	    sstat->mem.swins      ||
-	    sstat->mem.swouts       )
-	{
-		busy = sstat->mem.swouts / nsecs * pagbadness;
-
-		if (busy > 100)
-			busy = 100;
-
-		if (membadness)
-			badness = busy * 100 / membadness;
-		else
-			badness = 0;
-
-		if (highbadness < badness)
-		{
-			highbadness = badness;
-			*highorderp = MSORTMEM;
-		}
-
-		/*
-		** take care that this line is anyhow colored for
-		** 'almost critical' in case of swapouts > 1 per second
-		*/
-		if (sstat->mem.swouts / nsecs > 0  &&
-		    pagbadness && almostcrit && badness < almostcrit)
-			badness = almostcrit;
-
-		coloron = syscolorlabel("PAG", usecolors, badness);
-
-		printg(" | scan %s | stall %s |             "
-		       " | swin %s | swout %s |\n",
-			val2valstr(sstat->mem.pgscans,    format1, 6,
-								avgval, nsecs),
-			val2valstr(sstat->mem.allocstall, format2, 6,
-								avgval, nsecs),
-			val2valstr(sstat->mem.swins,      format3, 7,
-								avgval, nsecs),
-			val2valstr(sstat->mem.swouts,     format4, 6,
-								avgval, nsecs));
-
-		if (coloron)
-			syscoloroff(coloron);
-
-		curline++;
-	}
-
-	/*
-	** DISK statistics
-	**
-	** If extended disk-stats's are supported, take them
-	*/
-	mstot = cputot * 1000 / hertz / sstat->cpu.nrcpu; 
-
-	for (i=0, lin=0; sstat->xdsk.xdsk[i].name[0] && lin < maxdsklines; i++)
-	{
-		count_t iotot;
-
-		iotot =  sstat->xdsk.xdsk[i].nread + sstat->xdsk.xdsk[i].nwrite;
-
-		busy   = (double)(sstat->xdsk.xdsk[i].io_ms * 100.0 / mstot);
-
-		if (dskbadness)
-			badness = busy * 100 / dskbadness;
-		else
-			badness = 0;
-
-		if (highbadness < badness &&
-				(supportflags & (PATCHSTAT|IOSTAT)) )
-		{
-			highbadness = badness;
-			*highorderp = MSORTDSK;
-		}
-
-		if (iotot || fixedhead)
-		{
-			coloron = syscolorlabel("DSK", usecolors, badness);
-
-		    	printg(" | %11.11s | busy %6.0lf%% | read %s |"
-		               " write %s | avio %4.0lf ms |\n",
-		    	  sstat->xdsk.xdsk[i].name,
-			  (double)(sstat->xdsk.xdsk[i].io_ms * 100.0 / mstot),
-		    	  val2valstr(sstat->xdsk.xdsk[i].nread,  format1, 7,
-								avgval, nsecs),
-		    	  val2valstr(sstat->xdsk.xdsk[i].nwrite, format2, 6,
-								avgval, nsecs),
-		      	  iotot?(double)(sstat->xdsk.xdsk[i].io_ms/iotot):0.0);
-
-			if (coloron)
-				syscoloroff(coloron);
-
-		    curline++;
-		    lin++;
-		}
-	}
-
-	/*
-	** NET statistics
-	*/
-        udpin  = sstat->net.udpv4.InDatagrams  +
-			sstat->net.udpv6.Udp6InDatagrams;
-	udpout = sstat->net.udpv4.OutDatagrams +
-			sstat->net.udpv6.Udp6OutDatagrams;
-
-	if (sstat->net.tcp.InSegs || sstat->net.tcp.OutSegs ||
-	                   udpin ||                udpout || fixedhead )
-	{
-		printg("NET | transport   | tcpi %s | tcpo %s |"
-		       " udpi %s | udpo %s |\n",
-			val2valstr(sstat->net.tcp.InSegs,  format1, 7,
-								avgval, nsecs),
-			val2valstr(sstat->net.tcp.OutSegs, format2, 7,
-								avgval, nsecs),
-                        val2valstr(udpin,   format3, 7, avgval, nsecs),
-			val2valstr(udpout,  format4, 7, avgval, nsecs));
-		curline++;
-	}
-
-	ipin    = sstat->net.ipv4.InReceives  +
-			sstat->net.ipv6.Ip6InReceives;
-	ipout   = sstat->net.ipv4.OutRequests +
-			sstat->net.ipv6.Ip6OutRequests;
-	ipindel = sstat->net.ipv4.InDelivers +
-			sstat->net.ipv6.Ip6InDelivers;
-	ipfrw   = sstat->net.ipv4.ForwDatagrams +
-			sstat->net.ipv6.Ip6OutForwDatagrams;
-
-	if (ipin || ipout || fixedhead )
-	{
-		printg("NET | network     | ipi %s | ipo %s | ipfrw %s |"
-		       " deliv %s |\n",
-			val2valstr(ipin,    format1, 8, avgval, nsecs),
-			val2valstr(ipout,   format2, 8, avgval, nsecs),
-			val2valstr(ipfrw,   format3, 6, avgval, nsecs),
-			val2valstr(ipindel, format4, 6, avgval, nsecs));
-
-		curline++;
-	}
-
-	for (i=0, lin=0; sstat->intf.intf[i].name[0] && lin < maxintlines; i++)
-	{
-		if (sstat->intf.intf[i].rpack ||
-		    sstat->intf.intf[i].spack || fixedhead)
-		{
-			char    *iform = "Kbps";
-			char    *oform = "Kbps";
-			count_t ival, ipres, oval, opres;
-
-			/*
-			** convert byte-transfers to bit-transfers     (*    8)
-			** convert bit-transfers  to kilobit-transfers (/ 1000)
-			** per second
-			*/
-			ival	= sstat->intf.intf[i].rbyte/125/nsecs;
-			oval	= sstat->intf.intf[i].sbyte/125/nsecs;
-
-			if (ival >= 10000)    /* input value 4 positions */
-			{
-				if (ival < 10000000)
-				{
-					ipres = ival / 1000;
-					iform = "Mbps";
-				}
-				else
-				{
-					ipres = ival / 1000000;
-					iform = "Gbps";
-				}
-			}
-			else
-			{
-				ipres = ival;
-			}
-
-			if (oval >= 10000)    /* input value 4 positions */
-			{
-				if (oval < 10000000)
-				{
-					opres = oval / 1000;
-					oform = "Mbps";
-				}
-				else
-				{
-					opres = oval / 1000000;
-					oform = "Gbps";
-				}
-			}
-			else
-			{
-				opres = oval;
-			}
-
-			/*
-			** calculate busy-percentage for interface
-			*/
-			if (sstat->intf.intf[i].speed)	/* speed known? */
-			{
-				if (sstat->intf.intf[i].duplex)
-					busy = (ival > oval ? ival : oval) /
-					       (sstat->intf.intf[i].speed *10);
-				else
-					busy = (ival + oval) /
-					       (sstat->intf.intf[i].speed *10);
-
-				snprintf(busyval, sizeof busyval,
-							"%3lld%%", busy);
-			}
-			else
-			{
-				strcpy(busyval, "----"); /* speed unknown */
-
-				busy = 0;
-			}
-
-			if (netbadness)
-				badness = busy * 100 / netbadness;
-			else
-				badness = 0;
-
-			if (highbadness < badness &&
-					(supportflags & PATCHSTAT) )
-			{
-				highbadness = badness;
-				*highorderp = MSORTNET;
-			}
-
-			coloron = syscolorlabel("NET", usecolors, badness);
-
-			printg(" | %-6.6s %4s | pcki %s | pcko %s |"
-			       " si %4lld %s | so %4lld %s |\n",
-				sstat->intf.intf[i].name,
-				busyval,
-				val2valstr(sstat->intf.intf[i].rpack,
-						format1, 7, avgval, nsecs),
-				val2valstr(sstat->intf.intf[i].spack,
-						format2, 7, avgval, nsecs),
-				ipres, iform,
-				opres, oform);
-
-			if (coloron)
-				syscoloroff(coloron);
-
-			curline++;
-			lin++;
-		}
-	}
-
-	/*
-	** application statistics
-	**
-	** WWW: notice that we cause one access ourselves by fetching
-	**      the statistical counters
-	*/
-#if	HTTPSTATS
-	if (sstat->www.accesses > 1 || fixedhead )
-	{
-		printg("WWW | reqs %s | totKB %s | byt/rq %s | iwork %s |"
-		       " bwork %s |\n",
-			val2valstr(sstat->www.accesses,  format1, 6,
-							 avgval, nsecs),
-			val2valstr(sstat->www.totkbytes, format2, 6,
-						         avgval, nsecs),
-			val2valstr(sstat->www.accesses ?
-			    sstat->www.totkbytes*1024/sstat->www.accesses : 0,
-			                                 format3, 5, 0, 0),
-			val2valstr(sstat->www.iworkers,  format4, 6, 0, 0),
-			val2valstr(sstat->www.bworkers,  format5, 6, 0, 0) );
-		curline++;
-	}
+        extraparam      extra;
+        int             lin;
+        count_t         busy;
+        unsigned int    badness, highbadness=0;
+
+        extra.nsecs=nsecs;
+        extra.avgval=avgval;
+        /*
+        ** CPU statistics
+        */
+        extra.cputot = sstat->cpu.all.stime + sstat->cpu.all.utime +
+                       sstat->cpu.all.ntime + sstat->cpu.all.itime +
+                       sstat->cpu.all.wtime + sstat->cpu.all.Itime +
+                       sstat->cpu.all.Stime + sstat->cpu.all.steal +
+                       sstat->cpu.all.guest;
+
+        busy   = (extra.cputot - sstat->cpu.all.itime - sstat->cpu.all.wtime)
+                                * 100.0 / extra.cputot;
+
+        if (cpubadness)
+                badness = busy * 100 / cpubadness;
+        else
+                badness = 0;
+
+        if (highbadness < badness)
+        {
+                highbadness = badness;
+                *highorderp = MSORTCPU;
+        }
+
+        if (extra.cputot == 0)
+                extra.cputot = 1;             /* avoid divide-by-zero */
+
+        extra.percputot = extra.cputot / sstat->cpu.nrcpu;
+
+        if (extra.percputot == 0)
+                extra.percputot = 1;          /* avoid divide-by-zero */
+
+        move(curline, 0);
+        showsysline(allcpuline, sstat, &extra, "CPU", usecolors, badness);
+        curline++;
+
+        if (sstat->cpu.nrcpu > 1)
+        {
+                for (extra.index=lin=0;
+		     extra.index < sstat->cpu.nrcpu && lin < maxcpulines;
+   		     extra.index++)
+                {
+                        extra.percputot =  sstat->cpu.cpu[extra.index].stime +
+                                     sstat->cpu.cpu[extra.index].utime +
+                                     sstat->cpu.cpu[extra.index].ntime +
+                                     sstat->cpu.cpu[extra.index].itime +
+                                     sstat->cpu.cpu[extra.index].wtime +
+                                     sstat->cpu.cpu[extra.index].Itime +
+                                     sstat->cpu.cpu[extra.index].Stime +
+                                     sstat->cpu.cpu[extra.index].steal +
+                                     sstat->cpu.cpu[extra.index].guest;
+
+                        if (extra.percputot ==
+				(sstat->cpu.cpu[extra.index].itime +
+                                 sstat->cpu.cpu[extra.index].wtime  ) &&
+                                 !fixedhead                             )
+                                continue;       /* inactive cpu */
+
+                        busy   = (extra.percputot -
+					sstat->cpu.cpu[extra.index].itime -
+                                        sstat->cpu.cpu[extra.index].wtime)
+                                                  * 100.0 / extra.percputot;
+
+                        if (cpubadness)
+                                badness = busy * 100 / cpubadness;
+                        else
+                                badness = 0;
+
+                        if (highbadness < badness)
+                        {
+                                highbadness = badness;
+                                *highorderp = MSORTCPU;
+                        }
+
+                        if (extra.percputot == 0)
+                                extra.percputot = 1; /* avoid divide-by-zero */
+
+
+                        move(curline, 0);
+                        showsysline(indivcpuline, sstat, &extra, "cpu",
+				usecolors, badness);
+                        curline++;
+                        lin++;
+                }
+        }
+
+        /*
+        ** other CPU-related statistics
+        */
+        move(curline, 0);
+        showsysline(cplline, sstat, &extra, "CPL", 0, 0);
+        curline++;
+
+        /*
+        ** MEMORY statistics
+        */
+        busy   = (sstat->mem.physmem - sstat->mem.freemem
+                                     - sstat->mem.cachemem
+                                     - sstat->mem.buffermem)
+                                                * 100.0 / sstat->mem.physmem;
+
+        if (membadness)
+                badness = busy * 100 / membadness;
+        else
+                badness = 0;
+
+        if (highbadness < badness)
+        {
+                highbadness = badness;
+                *highorderp = MSORTMEM;
+        }
+
+        move(curline, 0);
+        showsysline(memline, sstat, &extra, "MEM", usecolors, badness);
+        curline++;
+
+        /*
+        ** SWAP statistics
+        */
+        busy   = (sstat->mem.totswap - sstat->mem.freeswap)
+                                * 100.0 / sstat->mem.totswap;
+
+        if (swpbadness)
+        {
+                badness = busy * 100 / swpbadness;
+        }
+        else
+        {
+                badness = 0;
+        }
+
+        if (highbadness < badness)
+        {
+                highbadness = badness;
+                *highorderp = MSORTMEM;
+        }
+
+        if (sstat->mem.commitlim && sstat->mem.committed > sstat->mem.commitlim)
+                 badness = 100;         /* force colored output */
+
+        move(curline, 0);
+        showsysline(swpline, sstat, &extra, "SWP", usecolors, badness);
+        curline++;
+
+        /*
+        ** PAGING statistics
+        */
+        if (fixedhead             ||
+            sstat->mem.pgscans    ||
+            sstat->mem.allocstall ||
+            sstat->mem.swins      ||
+            sstat->mem.swouts       )
+        {
+                busy = sstat->mem.swouts / nsecs * pagbadness;
+
+                if (busy > 100)
+                        busy = 100;
+
+                if (membadness)
+                        badness = busy * 100 / membadness;
+                else
+                        badness = 0;
+
+                if (highbadness < badness)
+                {
+                        highbadness = badness;
+                        *highorderp = MSORTMEM;
+                }
+
+                /*
+                ** take care that this line is anyhow colored for
+                ** 'almost critical' in case of swapouts > 1 per second
+                */
+                if (sstat->mem.swouts / nsecs > 0  &&
+                    pagbadness && almostcrit && badness < almostcrit)
+                        badness = almostcrit;
+
+                move(curline, 0);
+                showsysline(pagline, sstat, &extra,"PAG", usecolors, badness);
+                curline++;
+        }
+
+        /*
+        ** DISK statistics
+        */
+        extra.mstot = extra.cputot * 1000 / hertz / sstat->cpu.nrcpu; 
+
+	pridisklike(&extra, sstat->dsk.lvm, "LVM", highorderp, maxlvmlines,
+			&highbadness, &curline, fixedhead, usecolors);
+
+	pridisklike(&extra, sstat->dsk.mdd, "MDD", highorderp, maxmddlines,
+			&highbadness, &curline, fixedhead, usecolors);
+
+	pridisklike(&extra, sstat->dsk.dsk, "DSK", highorderp, maxdsklines,
+			&highbadness, &curline, fixedhead, usecolors);
+
+        /*
+        ** NET statistics
+        */
+        if (sstat->net.tcp.InSegs             || 
+            sstat->net.tcp.OutSegs            ||
+            sstat->net.udpv4.InDatagrams      || 
+            sstat->net.udpv6.Udp6InDatagrams  ||
+            sstat->net.udpv4.OutDatagrams     || 
+            sstat->net.udpv6.Udp6OutDatagrams ||
+            fixedhead )
+        {
+                move(curline, 0);
+                showsysline(nettransportline, sstat, &extra, "NET", 0, 0);
+                curline++;
+        }
+
+        if (sstat->net.ipv4.InReceives ||
+            sstat->net.ipv6.Ip6InReceives ||
+            sstat->net.ipv4.OutRequests ||
+            sstat->net.ipv6.Ip6OutRequests ||
+            fixedhead )
+        {
+                move(curline, 0);
+                showsysline(netnetline, sstat, &extra, "NET", 0, 0);
+                curline++;
+        }
+
+        for (extra.index=0, lin=0;
+	     sstat->intf.intf[extra.index].name[0] && lin < maxintlines;
+             extra.index++)
+        {
+                if (sstat->intf.intf[extra.index].rpack ||
+                    sstat->intf.intf[extra.index].spack || fixedhead)
+                {
+                        /*
+                        ** calculate busy-percentage for interface
+                        */
+
+                       count_t ival, oval;
+
+                        /*
+                        ** convert byte-transfers to bit-transfers     (*    8)
+                        ** convert bit-transfers  to kilobit-transfers (/ 1000)
+                        ** per second
+                        */
+                        ival    = sstat->intf.intf[extra.index].rbyte/125/nsecs;
+                        oval    = sstat->intf.intf[extra.index].sbyte/125/nsecs;
+
+			/* speed known? */
+                        if (sstat->intf.intf[extra.index].speed) 
+                        {
+                                if (sstat->intf.intf[extra.index].duplex)
+                                       busy = (ival > oval ? ival : oval) /
+					   (sstat->intf.intf[extra.index].speed
+									*10);
+                                else
+                                       busy = (ival + oval) /
+                                           (sstat->intf.intf[extra.index].speed
+									*10);
+
+                        }
+                        else
+                        {
+                                busy = 0;
+                        }
+
+                        if (netbadness)
+                                badness = busy * 100 / netbadness;
+                        else
+                                badness = 0;
+
+                        if (highbadness < badness &&
+                                        (supportflags & PATCHSTAT) )
+                        {
+                                highbadness = badness;
+                                *highorderp = MSORTNET;
+                        }
+
+                        move(curline, 0);
+                        showsysline(netinterfaceline, sstat, &extra, 
+                                      "NET", usecolors, badness);
+                        curline++;
+                        lin++;
+                }
+        }
+
+        /*
+        ** application statistics
+        **
+        ** WWW: notice that we cause one access ourselves by fetching
+        **      the statistical counters
+        */
+#if     HTTPSTATS
+        if (sstat->www.accesses > 1 || fixedhead )
+        {
+                move(curline, 0);
+                printg("WWW | reqs  %s | totKB %s | byt/rq %s | iwork %s |"
+                       " bwork %s |",
+                        val2valstr(sstat->www.accesses,  format1, 6,
+                                                         avgval, nsecs),
+                        val2valstr(sstat->www.totkbytes, format2, 6,
+                                                         avgval, nsecs),
+                        val2valstr(sstat->www.accesses ?
+                            sstat->www.totkbytes*1024/sstat->www.accesses : 0,
+                                                         format3, 5, 0, 0),
+                        val2valstr(sstat->www.iworkers,  format4, 6, 0, 0),
+                        val2valstr(sstat->www.bworkers,  format5, 6, 0, 0) );
+                if (!screen) 
+                {
+                        printg("\n");
+                }
+                curline++;
+        }
 #endif
 
-	/*
-	** if the system is hardly loaded, still CPU-ordering of
-	** processes is most interesting (instead of memory)
-	*/
-	if (highbadness < 70 && *highorderp == MSORTMEM)
-		*highorderp = MSORTCPU;
+        /*
+        ** if the system is hardly loaded, still CPU-ordering of
+        ** processes is most interesting (instead of memory)
+        */
+        if (highbadness < 70 && *highorderp == MSORTMEM)
+                *highorderp = MSORTCPU;
 
-	return curline;
+        return curline;
 }
+
+/*
+** handle all instances of a specific disk-like device
+*/
+static void
+pridisklike(extraparam *ep, struct perdsk *dp, char *lp, char *highorderp,
+		int maxlines, unsigned int *highbadp, int *curlinp,
+		int fixedhead, int usecolors)
+{
+	int 		lin;
+        count_t         busy;
+        unsigned int    badness;
+
+        for (ep->perdsk = dp, ep->index=0, lin=0;
+	     ep->perdsk[ep->index].name[0] && lin < maxlines; ep->index++)
+        {
+                ep->iotot =  ep->perdsk[ep->index].nread +
+		             ep->perdsk[ep->index].nwrite;
+
+                busy        = (double)(ep->perdsk[ep->index].io_ms *
+						100.0 / ep->mstot);
+
+                if (dskbadness)
+                        badness = busy * 100 / dskbadness;
+                else
+                        badness = 0;
+
+                if (*highbadp < badness && (supportflags & (PATCHSTAT|IOSTAT)) )
+                {
+                        *highbadp	= badness;
+                        *highorderp 	= MSORTDSK;
+                }
+
+                if (ep->iotot || fixedhead)
+                {
+                        move(*curlinp, 0);
+                        showsysline(dskline, 0, ep, lp, usecolors, badness);
+                        (*curlinp)++;
+                        lin++;
+                }
+        }
+}
+
+
+/*
+** function that checks if the current process is selected or suppressed;
+** returns 1 (suppress) or 0 (do not suppress)
+*/
+int
+procsuppress(struct pstat *curstat, struct selection *sel)
+{
+	/*
+	** check if only processes of a particular user
+	** should be shown
+	*/
+	if (sel->userid[0] != USERSTUB)
+	{
+		int     u = 0;
+
+		while (sel->userid[u] != USERSTUB)
+		{
+			if (sel->userid[u] == curstat->gen.ruid)
+				break;
+			u++;
+		}
+
+		if (sel->userid[u] != curstat->gen.ruid)
+			return 1;
+	}
+
+	/*
+	** check if only processes with a particular name
+	** should be shown
+	*/
+	if (sel->procnamesz &&
+	    regexec(&(sel->procregex), curstat->gen.name, 0, NULL, 0))
+		return 1;
+
+	return 0;
+}
+
 
 /*
 ** sort-functions
@@ -2004,355 +1867,318 @@ prisyst(struct sstat *sstat, int curline, int nsecs, int avgval,
 int
 compcpu(const void *a, const void *b)
 {
-	register count_t acpu = ((struct pstat *)a)->cpu.stime +
-	                        ((struct pstat *)a)->cpu.utime;
-	register count_t bcpu = ((struct pstat *)b)->cpu.stime +
-	                        ((struct pstat *)b)->cpu.utime;
+        register count_t acpu = ((struct pstat *)a)->cpu.stime +
+                                ((struct pstat *)a)->cpu.utime;
+        register count_t bcpu = ((struct pstat *)b)->cpu.stime +
+                                ((struct pstat *)b)->cpu.utime;
 
-	if (acpu < bcpu) return  1;
-	if (acpu > bcpu) return -1;
-	                 return compmem(a, b);
+        if (acpu < bcpu) return  1;
+        if (acpu > bcpu) return -1;
+                         return compmem(a, b);
 }
 
 int
 compdsk(const void *a, const void *b)
 {
-	register count_t adsk = ((struct pstat *)a)->dsk.rio +
-			        ((struct pstat *)a)->dsk.wio;
-	register count_t bdsk = ((struct pstat *)b)->dsk.rio +
-			        ((struct pstat *)b)->dsk.wio;
+        register count_t adsk = ((struct pstat *)a)->dsk.rio +
+                                ((struct pstat *)a)->dsk.wio;
+        register count_t bdsk = ((struct pstat *)b)->dsk.rio +
+                                ((struct pstat *)b)->dsk.wio;
 
-	if (adsk < bdsk) return  1;
-	if (adsk > bdsk) return -1;
-	                 return compcpu(a, b);
+        if (adsk < bdsk) return  1;
+        if (adsk > bdsk) return -1;
+                         return compcpu(a, b);
 }
 
 int
 compmem(const void *a, const void *b)
 {
-	register count_t amem = ((struct pstat *)a)->mem.rmem;
-	register count_t bmem = ((struct pstat *)b)->mem.rmem;
+        register count_t amem = ((struct pstat *)a)->mem.rmem;
+        register count_t bmem = ((struct pstat *)b)->mem.rmem;
 
-	if (amem < bmem) return  1;
-	if (amem > bmem) return -1;
-	                 return  0;
+        if (amem < bmem) return  1;
+        if (amem > bmem) return -1;
+                         return  0;
 }
 
 int
 compnet(const void *a, const void *b)
 {
-	register count_t anet = ((struct pstat *)a)->net.tcpsnd +
-			        ((struct pstat *)a)->net.tcprcv +
-			        ((struct pstat *)a)->net.udpsnd +
-			        ((struct pstat *)a)->net.udprcv +
-			        ((struct pstat *)a)->net.rawsnd +
-			        ((struct pstat *)a)->net.rawrcv  ;
-	register count_t bnet = ((struct pstat *)b)->net.tcpsnd +
-			        ((struct pstat *)b)->net.tcprcv +
-			        ((struct pstat *)b)->net.udpsnd +
-			        ((struct pstat *)b)->net.udprcv +
-			        ((struct pstat *)b)->net.rawsnd +
-			        ((struct pstat *)b)->net.rawrcv  ;
+        register count_t anet = ((struct pstat *)a)->net.tcpsnd +
+                                ((struct pstat *)a)->net.tcprcv +
+                                ((struct pstat *)a)->net.udpsnd +
+                                ((struct pstat *)a)->net.udprcv +
+                                ((struct pstat *)a)->net.rawsnd +
+                                ((struct pstat *)a)->net.rawrcv  ;
+        register count_t bnet = ((struct pstat *)b)->net.tcpsnd +
+                                ((struct pstat *)b)->net.tcprcv +
+                                ((struct pstat *)b)->net.udpsnd +
+                                ((struct pstat *)b)->net.udprcv +
+                                ((struct pstat *)b)->net.rawsnd +
+                                ((struct pstat *)b)->net.rawrcv  ;
 
-	if (anet < bnet) return  1;
-	if (anet > bnet) return -1;
-	                 return compcpu(a, b);
+        if (anet < bnet) return  1;
+        if (anet > bnet) return -1;
+                         return compcpu(a, b);
 }
 
 int
 cpucompar(const void *a, const void *b)
 {
-	register count_t aidle = ((struct percpu *)a)->itime +
-	                         ((struct percpu *)a)->wtime;
-	register count_t bidle = ((struct percpu *)b)->itime +
-	                         ((struct percpu *)b)->wtime;
+        register count_t aidle = ((struct percpu *)a)->itime +
+                                 ((struct percpu *)a)->wtime;
+        register count_t bidle = ((struct percpu *)b)->itime +
+                                 ((struct percpu *)b)->wtime;
 
-	if (aidle < bidle) return -1;
-	if (aidle > bidle) return  1;
-	                   return  0;
+        if (aidle < bidle) return -1;
+        if (aidle > bidle) return  1;
+                           return  0;
 }
 
 int
 diskcompar(const void *a, const void *b)
 {
-	register count_t amsio = ((struct perxdsk *)a)->io_ms;
-	register count_t bmsio = ((struct perxdsk *)b)->io_ms;
+        register count_t amsio = ((struct perdsk *)a)->io_ms;
+        register count_t bmsio = ((struct perdsk *)b)->io_ms;
 
-	if (amsio < bmsio) return  1;
-	if (amsio > bmsio) return -1;
-	                   return  0;
+        if (amsio < bmsio) return  1;
+        if (amsio > bmsio) return -1;
+                           return  0;
 }
 
 int
 intfcompar(const void *a, const void *b)
 {
-	register count_t afactor=0, bfactor=0;
+        register count_t afactor=0, bfactor=0;
 
-	count_t aspeed         = ((struct perintf *)a)->speed;
-	count_t bspeed         = ((struct perintf *)b)->speed;
-	char    aduplex        = ((struct perintf *)a)->duplex;
-	char    bduplex        = ((struct perintf *)b)->duplex;
-	count_t arbyte         = ((struct perintf *)a)->rbyte;
-	count_t brbyte         = ((struct perintf *)b)->rbyte;
-	count_t asbyte         = ((struct perintf *)a)->sbyte;
-	count_t bsbyte         = ((struct perintf *)b)->sbyte;
+        count_t aspeed         = ((struct perintf *)a)->speed;
+        count_t bspeed         = ((struct perintf *)b)->speed;
+        char    aduplex        = ((struct perintf *)a)->duplex;
+        char    bduplex        = ((struct perintf *)b)->duplex;
+        count_t arbyte         = ((struct perintf *)a)->rbyte;
+        count_t brbyte         = ((struct perintf *)b)->rbyte;
+        count_t asbyte         = ((struct perintf *)a)->sbyte;
+        count_t bsbyte         = ((struct perintf *)b)->sbyte;
 
 
-	/*
-	** if speed of first interface known, calculate busy factor
-	*/
-	if (aspeed)
-	{
-		if (aduplex)
-			afactor = (arbyte > asbyte ? arbyte : asbyte) /
-								(aspeed / 10);
-		else
-			afactor = (arbyte + asbyte) /		(aspeed / 10);
-	}
+        /*
+        ** if speed of first interface known, calculate busy factor
+        */
+        if (aspeed)
+        {
+                if (aduplex)
+                        afactor = (arbyte > asbyte ? arbyte : asbyte) /
+                                                                (aspeed / 10);
+                else
+                        afactor = (arbyte + asbyte) /           (aspeed / 10);
+        }
 
-	/*
-	** if speed of second interface known, calculate busy factor
-	*/
-	if (bspeed)
-	{
-		if (bduplex)
-			bfactor = (brbyte > bsbyte ? brbyte : bsbyte) /
-								(bspeed / 10);
-		else
-			bfactor = (brbyte + bsbyte) /		(bspeed / 10);
-	}
+        /*
+        ** if speed of second interface known, calculate busy factor
+        */
+        if (bspeed)
+        {
+                if (bduplex)
+                        bfactor = (brbyte > bsbyte ? brbyte : bsbyte) /
+                                                                (bspeed / 10);
+                else
+                        bfactor = (brbyte + bsbyte) /           (bspeed / 10);
+        }
 
-	/*
-	** compare interfaces
-	*/
-	if (aspeed && bspeed)
-	{
-		if (afactor < bfactor)	return  1;
-		if (afactor > bfactor)	return -1;
-					return  0;
-	}
+        /*
+        ** compare interfaces
+        */
+        if (aspeed && bspeed)
+        {
+                if (afactor < bfactor)  return  1;
+                if (afactor > bfactor)  return -1;
+                                        return  0;
+        }
 
-	if (!aspeed && !bspeed)
-	{
-		if ((arbyte + asbyte) < (brbyte + bsbyte))	return  1;
-		if ((arbyte + asbyte) > (brbyte + bsbyte))	return -1;
-								return  0;
-	}
+        if (!aspeed && !bspeed)
+        {
+                if ((arbyte + asbyte) < (brbyte + bsbyte))      return  1;
+                if ((arbyte + asbyte) > (brbyte + bsbyte))      return -1;
+                                                                return  0;
+        }
 
-	if (aspeed)
-		return -1;
-	else
-		return  1;
+        if (aspeed)
+                return -1;
+        else
+                return  1;
 }
 
 int
 compusr(const void *a, const void *b)
 {
-	register int uida = ((struct pstat *)a)->gen.ruid;
-	register int uidb = ((struct pstat *)b)->gen.ruid;
+        register int uida = ((struct pstat *)a)->gen.ruid;
+        register int uidb = ((struct pstat *)b)->gen.ruid;
 
-	if (uida > uidb) return  1;
-	if (uida < uidb) return -1;
-	                 return  0;
+        if (uida > uidb) return  1;
+        if (uida < uidb) return -1;
+                         return  0;
 }
 
 int
 compnam(const void *a, const void *b)
 {
-	register char *nama = ((struct pstat *)a)->gen.name;
-	register char *namb = ((struct pstat *)b)->gen.name;
+        register char *nama = ((struct pstat *)a)->gen.name;
+        register char *namb = ((struct pstat *)b)->gen.name;
 
-	return strcmp(nama, namb);
+        return strcmp(nama, namb);
 }
 
 /*
-** print the label of a system-statistics line and switch on
-** colors if needed 
+** handle modifications from the /etc/atoprc and ~/.atoprc file
 */
-static int
-syscolorlabel(char *labeltext, int usecolors, unsigned int badness)
+int
+get_posval(char *name, char *val)
 {
-	if (usecolors)
-	{
-		if (badness >= 100)
-		{
-			attron(A_BOLD);
-			attron(COLOR_PAIR(COLORHIGH));
-			attron (A_BLINK);
-			printg(labeltext);
-			attroff(A_BLINK);
-			return COLORHIGH;
-		}
+        int     value = atoi(val);
 
-		if (almostcrit && badness >= almostcrit)
-		{
-			attron(A_BOLD);
-			attron(COLOR_PAIR(COLORMED));
-			printg(labeltext);
-			return COLORMED;
-		}
-	}
+        if ( !numeric(val))
+        {
+                fprintf(stderr, "atoprc: %s value %s not a (positive) numeric\n", 
+                name, val);
+                exit(1);
+        }
 
-	/*
-	** no colors required or no reason to show colors
-	*/
-	printg(labeltext);
-	return 0;
+        if (value < 0)
+        {
+                fprintf(stderr,
+                        "atoprc: %s value %d not positive\n", 
+                        name, value);
+                exit(1);
+        }
+
+        return value;
 }
 
-static void
-syscoloroff(char curcolor)
+int
+get_perc(char *name, char *val)
 {
-	attroff(A_BOLD);
-	attroff(COLOR_PAIR(curcolor));
-}
+        int     value = get_posval(name, val);
 
-/*
-** handle modifications from the ~/.atoprc file
-*/
-void
-do_cpucritperc(char *val)
-{
-	int	value = atoi(val);
+        if (value < 0 || value > 100)
+        {
+                fprintf(stderr, "atoprc: %s value %d not in range 0-100\n", 
+                        name, value);
+                exit(1);
+        }
 
-	if ( !numeric(val))
-	{
-		fprintf(stderr, ".atoprc: cpucritperc value not numeric\n");
-		exit(1);
-	}
-
-	if (value < 0 || value > 100)
-	{
-		fprintf(stderr,
-			".atoprc: cpucritperc value not in range 0-100\n");
-		exit(1);
-	}
-
-	cpubadness = value;
+        return value;
 }
 
 void
-do_memcritperc(char *val)
+do_cpucritperc(char *name, char *val)
 {
-	int	value = atoi(val);
-
-	if ( !numeric(val))
-	{
-		fprintf(stderr, ".atoprc: memcritperc value not numeric\n");
-		exit(1);
-	}
-
-	if (value < 0 || value > 100)
-	{
-		fprintf(stderr,
-			".atoprc: memcritperc value not in range 0-100\n");
-		exit(1);
-	}
-
-	membadness = value;
+        cpubadness = get_perc(name, val);
 }
 
 void
-do_swpcritperc(char *val)
+do_memcritperc(char *name, char *val)
 {
-	int	value = atoi(val);
-
-	if ( !numeric(val))
-	{
-		fprintf(stderr, ".atoprc: swpcritperc value not numeric\n");
-		exit(1);
-	}
-
-	if (value < 0 || value > 100)
-	{
-		fprintf(stderr,
-			".atoprc: swpcritperc value not in range 0-100\n");
-		exit(1);
-	}
-
-	swpbadness = value;
+        membadness = get_perc(name, val);
 }
 
 void
-do_dskcritperc(char *val)
+do_swpcritperc(char *name, char *val)
 {
-	int	value = atoi(val);
-
-	if ( !numeric(val))
-	{
-		fprintf(stderr, ".atoprc: dskcritperc value not numeric\n");
-		exit(1);
-	}
-
-	if (value < 0 || value > 100)
-	{
-		fprintf(stderr,
-			".atoprc: dskcritperc value not in range 0-100\n");
-		exit(1);
-	}
-
-	dskbadness = value;
+        swpbadness = get_perc(name, val);
 }
 
 void
-do_netcritperc(char *val)
+do_dskcritperc(char *name, char *val)
 {
-	int	value = atoi(val);
-
-	if ( !numeric(val))
-	{
-		fprintf(stderr, ".atoprc: netcritperc value not numeric\n");
-		exit(1);
-	}
-
-	if (value < 0 || value > 100)
-	{
-		fprintf(stderr,
-			".atoprc: netcritperc value not in range 0-100\n");
-		exit(1);
-	}
-
-	netbadness = value;
+        dskbadness = get_perc(name, val);
 }
 
 void
-do_swoutcritsec(char *val)
+do_netcritperc(char *name, char *val)
 {
-	int	value = atoi(val);
-
-	if ( !numeric(val))
-	{
-		fprintf(stderr, ".atoprc: swoutcritsec value not numeric\n");
-		exit(1);
-	}
-
-	if (value < 0)
-	{
-		fprintf(stderr,
-			".atoprc: swoutcritsec value less then 0\n");
-		exit(1);
-	}
-
-	pagbadness = value;
+        netbadness = get_perc(name, val);
 }
 
 void
-do_almostcrit(char *val)
+do_swoutcritsec(char *name, char *val)
 {
-	int	value = atoi(val);
+        pagbadness = get_posval(name, val);
+}
 
-	if ( !numeric(val))
-	{
-		fprintf(stderr, ".atoprc: almostcrit value not numeric\n");
-		exit(1);
-	}
+void
+do_almostcrit(char *name, char *val)
+{
+        almostcrit = get_perc(name, val);
+}
 
-	if (value < 0 || value > 99)
-	{
-		fprintf(stderr,
-			".atoprc: almostcrit value not in range 0-99\n");
-		exit(1);
-	}
+void
+do_ownsysprcline(char *name, char *val)
+{
+        make_sys_prints(sysprcline, MAXITEMS, val, prcsyspdefs, name);
+}
 
-	almostcrit = value;
+void
+do_ownallcpuline(char *name, char *val)
+{
+        make_sys_prints(allcpuline, MAXITEMS, val, cpusyspdefs, name);
+}
+
+void
+do_ownindivcpuline(char *name, char *val)
+{
+        make_sys_prints(indivcpuline, MAXITEMS, val, cpisyspdefs, name);
+}
+
+void
+do_owncplline(char *name, char *val)
+{
+        make_sys_prints(cplline, MAXITEMS, val, cplsyspdefs, name);
+}
+
+void
+do_ownmemline(char *name, char *val)
+{
+        make_sys_prints(memline, MAXITEMS, val, memsyspdefs, name);
+}
+
+void
+do_ownswpline(char *name, char *val)
+{
+        make_sys_prints(swpline, MAXITEMS, val, swpsyspdefs, name);
+}
+
+void
+do_ownpagline(char *name, char *val)
+{
+        make_sys_prints(pagline, MAXITEMS, val, pagsyspdefs, name);
+}
+
+void
+do_owndskline(char *name, char *val)
+{
+        make_sys_prints(dskline, MAXITEMS, val, dsksyspdefs, name);
+}
+
+void
+do_ownnettransportline(char *name, char *val)
+{
+        make_sys_prints(nettransportline, MAXITEMS, val, nettranssyspdefs, name);
+}
+
+void
+do_ownnetnetline(char *name, char *val)
+{
+        make_sys_prints(netnetline, MAXITEMS, val, netnetsyspdefs, name);
+}
+
+void
+do_ownnetinterfaceline(char *name, char *val)
+{
+        make_sys_prints(netinterfaceline, MAXITEMS, val, netintfsyspdefs, name);
+}
+
+void
+do_ownprocline(char *name, char *val)
+{
+	make_proc_prints(ownprocs, MAXITEMS, val, name);
 }

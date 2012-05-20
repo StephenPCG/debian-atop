@@ -7,8 +7,8 @@
 ** This source-file contains functions to manipulate with process-accounting
 ** features (switch it on/off and read the process-accounting records).
 ** ================================================================
-** Author:      Gerlof Langeveld - AT Computing, Nijmegen, Holland
-** E-mail:      gerlof@ATComputing.nl
+** Author:      Gerlof Langeveld
+** E-mail:      gerlof.langeveld@atoptool.nl
 ** Date:        November 1996
 ** LINUX-port:  June 2000
 **
@@ -23,6 +23,12 @@
 ** See the GNU General Public License for more details.
 **
 ** $Log: acctproc.c,v $
+** Revision 1.28  2010/04/23 12:20:19  gerlof
+** Modified mail-address in header.
+**
+** Revision 1.27  2009/12/12 10:12:01  gerlof
+** Register and display end date and end time for process.
+**
 ** Revision 1.26  2008/03/06 08:37:25  gerlof
 ** Register/show ppid of a process.
 **
@@ -107,7 +113,7 @@
 **
 */
 
-static const char rcsid[] = "$Id: acctproc.c,v 1.26 2008/03/06 08:37:25 gerlof Exp $";
+static const char rcsid[] = "$Id: acctproc.c,v 1.28 2010/04/23 12:20:19 gerlof Exp $";
 
 #include <sys/types.h>
 #include <stdio.h>
@@ -631,6 +637,7 @@ acctphotoproc(struct pstat *accproc, int nrprocs)
 			api->gen.ruid   = acctrec.ac_uid16;
 			api->gen.rgid   = acctrec.ac_gid16;
 			api->gen.btime  = acctrec.ac_btime;
+			api->gen.elaps  = acctrec.ac_etime;
 			api->cpu.stime  = acctexp(acctrec.ac_stime);
 			api->cpu.utime  = acctexp(acctrec.ac_utime);
 			api->mem.minflt = acctexp(acctrec.ac_minflt);
@@ -655,6 +662,7 @@ acctphotoproc(struct pstat *accproc, int nrprocs)
 			api->gen.ruid   = acctrec_v3.ac_uid;
 			api->gen.rgid   = acctrec_v3.ac_gid;
 			api->gen.btime  = acctrec_v3.ac_btime;
+			api->gen.elaps  = acctrec_v3.ac_etime;
 			api->cpu.stime  = acctexp(acctrec_v3.ac_stime);
 			api->cpu.utime  = acctexp(acctrec_v3.ac_utime);
 			api->mem.minflt = acctexp(acctrec_v3.ac_minflt);
@@ -679,6 +687,7 @@ acctphotoproc(struct pstat *accproc, int nrprocs)
 			api->gen.ruid   = acctrec_atop.ac_uid;
 			api->gen.rgid   = acctrec_atop.ac_gid;
 			api->gen.btime  = acctrec_atop.ac_btime;
+			api->gen.elaps  = acctrec_atop.ac_etime;
 			api->cpu.stime  = acctexp (acctrec_atop.ac_stime);
 			api->cpu.utime  = acctexp (acctrec_atop.ac_utime);
 			api->mem.minflt = acctexp (acctrec_atop.ac_minflt);
