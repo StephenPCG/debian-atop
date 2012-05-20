@@ -1,0 +1,336 @@
+2008-03-06  Gerlof Langeveld  <gerlof@ATComputing.nl>
+
+        * photoproc.c, parseable.c, acctproc.c, showlinux.c:
+  		Register/show PPID related to a process.
+		For this purpose the former TGID-field (not used any more)
+		is reused internally, which means that the PPID from raw
+		logfiles that were created by older versions of atop
+		is not reliable.
+
+2008-02-25  Gerlof Langeveld  <gerlof@ATComputing.nl>
+
+        * atopsar.c, deviate.c:
+  		Added experimental code for HTTP-statistics.
+
+2008-02-11  Gerlof Langeveld  <gerlof@ATComputing.nl>
+
+        * showgeneric.c:
+  		Bug-solution for segmentation-fault in case of
+		invalid regular expression.
+
+2008-01-21  Gerlof Langeveld  <gerlof@ATComputing.nl>
+
+        * atopsar.c:
+  		Add new reports to show top-3 processes consuming
+		most cpu, memory, disk and network resources.
+
+2008-01-21  Gerlof Langeveld  <gerlof@ATComputing.nl>
+
+        * atopsar.c:
+  		Add number of thread per state to output generated
+		by -P flag.
+
+2008-01-18  Gerlof Langeveld  <gerlof@ATComputing.nl>
+
+        * showlinux.c, photoproc.c, parseable.c:
+  		Gather and show information about the number of
+		individual threads that are in state running, 
+		interruptible sleeping or non-interruptible sleeping.
+		This information is shown in the scheduling
+		report (keystroke 's')
+
+2008-01-14  Gerlof Langeveld  <gerlof@ATComputing.nl>
+
+        * acctproc.c:
+  		Specify the name of a specific process accounting file with
+		the environment variable ATOPACCT (or disable process
+		accounting when this variable has an empty contents).
+
+2008-01-07  Gerlof Langeveld  <gerlof@ATComputing.nl>
+
+        * atopsar.c:
+  		Rename forks/s into clones/s in report with flag -p.
+
+2008-01-07  Gerlof Langeveld  <gerlof@ATComputing.nl>
+
+        * atopsar.c:
+  		Show 100% per CPU instead of 100% for all CPUs in the
+		report shown with the -c flag of atopsar (similar to
+		the atop output).
+
+2008-01-07  Gerlof Langeveld  <gerlof@ATComputing.nl>
+
+        * showlinux.c:
+  		The network-interfaces should be sorted on their
+		busy-percentage and not on the number of transferred
+		packages.
+
+2008-01-07  Gerlof Langeveld  <gerlof@ATComputing.nl>
+
+        * atopsar.c, deviate.c, atop.c:
+  		Make summary-reports by packing N samples together in one
+		sample. The value N can be specified with the new flag -R.
+
+2007-11-29  Gerlof Langeveld  <gerlof@ATComputing.nl>
+
+        * atopsar.c:
+  		Repeat the header of a report every X lines (flag -H).
+		In case of output to a window, value X is determined
+		dynamically, depending on the window size.
+
+2007-11-29  Gerlof Langeveld  <gerlof@ATComputing.nl>
+
+        * atopsar.c:
+  		Added new report with flag -P for process-activity (number
+		of processes currently present and number of zombies,
+		number of thread creations and process exits). 
+
+2007-11-07  Gerlof Langeveld  <gerlof@ATComputing.nl>
+
+        * showlinux.c:
+  		Modified format for avg1, avg5 and avg15 (CPL)
+		when counters become too large.
+
+2007-11-06  Gerlof Langeveld  <gerlof@ATComputing.nl>
+
+        * atopsar.c:
+  		Modify duplex indicator "fdx" to "f" and "hdx" to "h"
+		in the report about interfaces (line too long if
+		markers are added).
+
+2007-11-06  Gerlof Langeveld  <gerlof@ATComputing.nl>
+
+        * atopsar.c, atop.c:
+  		Add keyword atopsarflags to configuration-file ~/.atoprc
+		to specify personal defaults.
+
+2007-11-06  Gerlof Langeveld  <gerlof@ATComputing.nl>
+
+        * atopsar.c:
+  		Add support for colors/markers in case of (almost) 
+		critical resource consumption (similar to atop).
+		This concerns the -x/-C/-M flags.
+
+2007-11-05  Gerlof Langeveld  <gerlof@ATComputing.nl>
+
+        * photoproc.c:
+  		Detect disappearing /proc/<pid>/stat file when
+		concerning process exits meanwhile (credits: Rene Rebe).
+
+2007-11-05  Gerlof Langeveld  <gerlof@ATComputing.nl>
+
+        * procdbase.c, deviate.c:
+		Match processes not only on pid, but also on start time
+		to avoid wrong matches when a proces has exited and
+  		a new proces reuses its pid within the same sample.
+
+2007-11-05  Gerlof Langeveld  <gerlof@ATComputing.nl>
+
+        * showlinux.c, deviate.c:
+		Bug-solution for new-process indicator on 64-bits machines.
+
+2007-11-05  Gerlof Langeveld  <gerlof@ATComputing.nl>
+
+        * showlinux.c:
+		Bug-solution for huge exit codes for 64-bits machines.
+
+2007-10-04  Gerlof Langeveld  <gerlof@ATComputing.nl>
+
+        * atopsar.c:
+		Use line-buffering on stdout, even for pipes and files.
+
+2007-08-17  Gerlof Langeveld  <gerlof@ATComputing.nl>
+
+        * atopsar.c:
+		Cosmetic changes to counter names.
+
+2007-08-17  Gerlof Langeveld  <gerlof@ATComputing.nl>
+
+        * acctproc.c:
+		Verify if private accounting used before switching
+		off accounting.
+
+2007-08-16  Gerlof Langeveld  <gerlof@ATComputing.nl>
+
+        * atop.c:
+		Add support for atopsar reporting (mainly 
+		calling of atopsar).
+
+2007-08-16  Gerlof Langeveld  <gerlof@ATComputing.nl>
+
+        * atopsar.c:
+		New source file to implement the atopsar command
+		as a (symbolic) link to the atop command. Most of
+		the source code has been copied from the atsar command.
+
+2007-08-16  Gerlof Langeveld  <gerlof@ATComputing.nl>
+
+        * deviate.c:
+		Add support for atopsar reporting (lot of
+		counters added).
+
+2007-08-16  Gerlof Langeveld  <gerlof@ATComputing.nl>
+
+        * parseable.c:
+		Add support for atopsar reporting (handling of
+		certain network counters modified).
+
+2007-08-16  Gerlof Langeveld  <gerlof@ATComputing.nl>
+
+        * photosyst.c:
+		Add support for atopsar reporting (gather more counters,
+		mainly related to networking).
+
+2007-08-16  Gerlof Langeveld  <gerlof@ATComputing.nl>
+
+        * rawlog.c:
+		Add support for atopsar reporting (gather more counters,
+		mainly related to networking).
+
+2007-08-16  Gerlof Langeveld  <gerlof@ATComputing.nl>
+
+        * showlinux.c:
+		Add support for atopsar reporting (handling of
+		certain network counters modified).
+
+2007-07-04  Gerlof Langeveld  <gerlof@ATComputing.nl>
+
+        * showlinux.c:
+		Bug-solution: divide by zero problem.
+
+2007-03-27  Gerlof Langeveld  <gerlof@ATComputing.nl>
+
+        * photoproc.c:
+		Only allow check for IOSTAT when patches are not installed.
+
+2007-03-24  Gerlof Langeveld  <gerlof@ATComputing.nl>
+
+        * atop.spec, atop.daily, accs_atop, accu_atop:
+		Remove time-hole from 23.50 till 00.00 for daily logging.
+
+2007-03-22  Gerlof Langeveld  <gerlof@ATComputing.nl>
+
+        * atop.spec, atop.daily, accs_atop, accu_atop:
+		Improve automatic startup independent of the fact
+		that the RPM `psacct' is installed.
+		The script `atop.24hours' has been removed.
+
+2007-03-22  Gerlof Langeveld  <gerlof@ATComputing.nl>
+
+        * photoproc.c, deviate.c, showlinux.c, showgeneric.c:
+		Introduce counters from /proc/pid/io for disk activity.
+
+2007-03-20  Gerlof Langeveld  <gerlof@ATComputing.nl>
+
+        * rawlog.c:
+		Avoid loop when incompatible raw file is read.
+		Verify return code of compress/uncompress functions.
+		Verify success of malloc's.
+
+2007-03-09  Gerlof Langeveld  <gerlof@ATComputing.nl>
+
+        * showgeneric.c:
+		Bug-solution: only allow key 'N' when kernel patch
+		is installed, and key 'D' when kernel patch is installed
+  		or /proc/pid/io is available.
+
+2007-02-23  Gerlof Langeveld  <gerlof@ATComputing.nl>
+
+        * rawlog.c:
+		Bug-solution: allow more than 65535 processes to be logged
+		per interval.
+
+2007-02-13  Gerlof Langeveld  <gerlof@ATComputing.nl>
+
+        * acctproc.c:
+		New boolean introduced to indicate if accounting is active.
+
+2007-01-26  Gerlof Langeveld  <gerlof@ATComputing.nl>
+
+        * atop.c, showlinux.c:
+		Add configuration-value 'swoutcritsec'.
+
+2007-01-26  Gerlof Langeveld  <gerlof@ATComputing.nl>
+
+        * showlinux.c:
+		Support steal-percentage.
+		Avoid that interfaces are colored without reason.
+
+2007-01-22  Gerlof Langeveld  <gerlof@ATComputing.nl>
+
+        * photosyst.c:
+		Support of special disks used by virtual machines.
+
+2007-01-22  Gerlof Langeveld  <gerlof@ATComputing.nl>
+
+        * photosyst.c, deviate.c:
+		Support steal-time from /proc/stat.
+
+2007-01-19  Gerlof Langeveld  <gerlof@ATComputing.nl>
+
+        * ifprop.c:
+		Added typedef u64 for SuSE distributions.
+
+2007-01-18  Gerlof Langeveld  <gerlof@ATComputing.nl>
+
+        * deviate.c:
+		Support for network-interface busy-percentage.
+
+2007-01-18  Gerlof Langeveld  <gerlof@ATComputing.nl>
+
+        * showgeneric.c:
+		Add support for colors and automatic determination of most
+		critical resource.
+
+2007-01-18  Gerlof Langeveld  <gerlof@ATComputing.nl>
+
+        * showlinux.c:
+		Add support for colors, automatic determination of most
+		critical resource and parsing of new arguments in ~/.atoprc
+
+2007-01-18  Gerlof Langeveld  <gerlof@ATComputing.nl>
+
+        * ifprop.c:
+		New functions to fetch the properties of a network
+		interface (mainly speed and half/full duplex).
+
+2007-01-18  Gerlof Langeveld  <gerlof@ATComputing.nl>
+
+        * atop.c:
+		Improved syntax-checking for ~/.atoprc file.
+		Support for network-interface busy-percentage.
+
+2007-01-15  Gerlof Langeveld  <gerlof@ATComputing.nl>
+
+        * photoproc.c:
+		Add new function to count actual number of processes.
+
+2006-11-13  Gerlof Langeveld  <gerlof@ATComputing.nl>
+
+        * showlinux.c:
+		Modify network-speed counters (divide by 1000 i.s.o. 1024
+ 		and postpone switch from Mbps to Gbps as suggested
+		by T. Lindgren).
+
+2006-07-24  Gerlof Langeveld  <gerlof@ATComputing.nl>
+
+        * photosyst.h, photosyst.c, deviate.c, showlinux.c:
+		Add a new system-level line ('CPL') showing CPU load
+		information like load average (last 1, 5, 15 minutes)
+		number of context switches and number of interrupts.
+
+2006-05-15  Gerlof Langeveld  <gerlof@ATComputing.nl>
+
+        * showgeneric.c:
+		Allow a numerical UID to be specified with the
+		function 'U'.
+
+2006-05-15  Gerlof Langeveld  <gerlof@ATComputing.nl>
+
+        * showlinux.c:
+		When there is no user/group name which corresponds to a
+		numerical UID/GID, show the numerical value i.s.o. "unknown".
+
+2006-04-19  Gerlof Langeveld  <gerlof@ATComputing.nl>
+
+        * setup of ChangeLog
