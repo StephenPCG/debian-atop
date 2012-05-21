@@ -15,11 +15,9 @@ atop (1.26-0) UNRELEASED; urgency=low
     * disable versioned symlinks
     * disable chkconfig call from Makefile
   * postinst: remove path from logrotate, move DEBHELPER last, set -e
-  * init script
-    * set dependency on $remote_fs
-    * remove /usr/local from PATH
-    * add status option.
-      Thanks to Peter Eisentraut (Closes: #529009)
+  * new init script
+    * Thanks to Peter Eisentraut for a patch that didn't get used
+      (Closes: #529009)
   * put proper Copyright statement in debian/copyright
   * debian/control
     * add ${misc:Depends}
