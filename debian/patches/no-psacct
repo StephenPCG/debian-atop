@@ -1,0 +1,28 @@
+--- a/Makefile
++++ b/Makefile
+@@ -10,7 +10,6 @@
+ MAN1PATH = /usr/share/man/man1
+ MAN5PATH = /usr/share/man/man5
+ CRNPATH  = /etc/cron.d
+-ROTPATH  = /etc/logrotate.d
+ PMPATH1  = /usr/lib/pm-utils/sleep.d
+ PMPATH2  = /usr/lib64/pm-utils/sleep.d
+ 
+@@ -46,8 +45,6 @@
+ 			then mkdir -p $(DESTDIR)$(MAN5PATH); fi
+ 		if [ ! -d $(DESTDIR)$(CRNPATH) ]; 	\
+ 			then mkdir -p $(DESTDIR)$(CRNPATH); fi
+-		if [ ! -d $(DESTDIR)$(ROTPATH) ]; 	\
+-			then mkdir -p $(DESTDIR)$(ROTPATH); fi
+ 		if [ -d $(DESTDIR)$(PMPATH1) ]; 	\
+ 			then cp 45atoppm $(DESTDIR)$(PMPATH1); 	\
+ 			chmod 0711 $(DESTDIR)$(PMPATH1)/45atoppm; fi
+@@ -67,8 +64,6 @@
+ 		cp man/atopsar.1 	$(DESTDIR)$(MAN1PATH)
+ 		cp man/atoprc.5  	$(DESTDIR)$(MAN5PATH)
+ 		cp atop.cron     	$(DESTDIR)$(CRNPATH)/atop
+-		cp psaccs_atop   	$(DESTDIR)$(ROTPATH)/psaccs_atop
+-		cp psaccu_atop  	$(DESTDIR)$(ROTPATH)/psaccu_atop
+ 		touch          	  	$(DESTDIR)$(LOGPATH)/dummy_before
+ 		touch            	$(DESTDIR)$(LOGPATH)/dummy_after
+ 		if [ -z "$(DESTDIR)" ]; then /sbin/chkconfig --add atop; fi
