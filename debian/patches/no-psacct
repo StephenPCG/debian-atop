@@ -17,12 +17,14 @@
  		if [ -d $(DESTDIR)$(PMPATH1) ]; 	\
  			then cp 45atoppm $(DESTDIR)$(PMPATH1); 	\
  			chmod 0711 $(DESTDIR)$(PMPATH1)/45atoppm; fi
-@@ -67,8 +64,6 @@
+@@ -67,10 +64,6 @@
  		cp man/atopsar.1 	$(DESTDIR)$(MAN1PATH)
  		cp man/atoprc.5  	$(DESTDIR)$(MAN5PATH)
  		cp atop.cron     	$(DESTDIR)$(CRNPATH)/atop
 -		cp psaccs_atop   	$(DESTDIR)$(ROTPATH)/psaccs_atop
 -		cp psaccu_atop  	$(DESTDIR)$(ROTPATH)/psaccu_atop
- 		touch          	  	$(DESTDIR)$(LOGPATH)/dummy_before
- 		touch            	$(DESTDIR)$(LOGPATH)/dummy_after
+-		touch          	  	$(DESTDIR)$(LOGPATH)/dummy_before
+-		touch            	$(DESTDIR)$(LOGPATH)/dummy_after
  		if [ -z "$(DESTDIR)" ]; then /sbin/chkconfig --add atop; fi
+ distr: rm -f *.o
+ 		tar czvf /tmp/atop.tar.gz *
