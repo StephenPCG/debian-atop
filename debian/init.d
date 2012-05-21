@@ -1,7 +1,6 @@
 #! /bin/sh
 #
 # atop init script
-#
 
 ### BEGIN INIT INFO
 # Provides:          atop
@@ -19,48 +18,111 @@
 #                    interval.
 ### END INIT INFO
 
-PATH=/sbin:/bin:/usr/sbin:/usr/bin
-DAEMON=/usr/bin/atop
-DARGS="-a -w /var/log/atop.log 600"
-NAME=atop
+# PATH should only include /usr/* if it runs after the mountnfs.sh script
+PATH=/sbin:/usr/sbin:/bin:/usr/bin
 DESC="atop system monitor"
+NAME=atop
+DAEMON=/usr/bin/atop
+DAEMON_ARGS="-a -w /var/log/atop.log 600"
+PIDFILE=/var/run/$NAME.pid
+SCRIPTNAME=/etc/init.d/$NAME
 
-test -x $DAEMON || exit 0
+# Exit if the package is not installed
+[ -x $DAEMON ] || exit 0
 
 set -e
 
 . /lib/lsb/init-functions
 
+# Load the VERBOSE setting and other rcS variables
+. /lib/init/vars.sh
+
+# Define LSB log_* functions.
+# Depend on lsb-base (>= 3.0-6) to ensure that this file is present.
+. /lib/lsb/init-functions
+
+#
+# Function that starts the daemon/service
+#
+do_start()
+{
+        # Return
+        #   0 if daemon has been started
+        #   1 if daemon was already running
+        #   2 if daemon could not be started
+        start-stop-daemon --start --background --quiet \
+		--pidfile $PIDFILE --make-pidfile \
+		--exec $DAEMON --test > /dev/null \
+                || return 1
+        start-stop-daemon --start --background --quiet --pidfile $PIDFILE \
+		--exec $DAEMON -- \
+                $DAEMON_ARGS \
+                || return 2
+}
+
+#
+# Function that stops the daemon/service
+#
+do_stop()
+{
+        # Return
+        #   0 if daemon has been stopped
+        #   1 if daemon was already stopped
+        #   2 if daemon could not be stopped
+        #   other if a failure occurred
+        start-stop-daemon --stop --quiet --retry=TERM/30/KILL/5 --pidfile $PIDFILE --name $NAME || true
+        RETVAL="$?"
+        [ "$RETVAL" = 2 ] && return 2
+        # Many daemons don't delete their pidfiles when they exit.
+        rm -f $PIDFILE
+        return "$RETVAL"
+}
+
+
 case "$1" in
   start)
-	echo -n "Starting $DESC: "
-	start-stop-daemon --start --background --quiet --exec $DAEMON -- $DARGS
-	echo "$NAME."
-	;;
+	[ "$VERBOSE" != no ] && log_daemon_msg "Starting $DESC " "$NAME"
+	do_start
+	case "$?" in
+                0|1) [ "$VERBOSE" != no ] && log_end_msg 0 ;;
+                2) [ "$VERBOSE" != no ] && log_end_msg 1 ;;
+	esac
+  ;;
   stop)
-	echo -n "Stopping $DESC: "
-	start-stop-daemon --stop --quiet --retry 2 --oknodo --exec $DAEMON -- $DARGS
-	echo "$NAME."
-	;;
-  #reload)
-  restart|force-reload)
-	#
-	#	If the "reload" option is implemented, move the "force-reload"
-	#	option to the "reload" entry above. If not, "force-reload" is
-	#	just the same as "restart".
-	#
-	echo -n "Restarting $DESC: "
-	start-stop-daemon --stop --quiet --exec $DAEMON -- $DARGS
-	sleep 1
-	start-stop-daemon --start --background --quiet --exec $DAEMON -- $DARGS
-	echo "$NAME."
-	;;
+        [ "$VERBOSE" != no ] && log_daemon_msg "Stopping $DESC" "$NAME"
+        do_stop
+        case "$?" in
+                0|1) [ "$VERBOSE" != no ] && log_end_msg 0 ;;
+                2) [ "$VERBOSE" != no ] && log_end_msg 1 ;;
+        esac
+        ;;
   status)
-       status_of_proc $DAEMON $NAME
+       status_of_proc "$DAEMON" "$NAME" && exit 0 || exit $?
        ;;
+  restart|force-reload)
+        #
+        # If the "reload" option is implemented then remove the
+        # 'force-reload' alias
+        #
+        log_daemon_msg "Restarting $DESC" "$NAME"
+        do_stop
+        case "$?" in
+          0|1)
+                do_start
+                case "$?" in
+                        0) log_end_msg 0 ;;
+                        1) log_end_msg 1 ;; # Old process is still running
+                        *) log_end_msg 1 ;; # Failed to start
+                esac
+                ;;
+          *)
+                # Failed to stop
+                log_end_msg 1
+                ;;
+        esac
+        ;;
   *)
-	N=/etc/init.d/$NAME
-	echo "Usage: $N {start|stop|restart|force-reload|status}" >&2
+	echo "Usage: $SCRIPTNAME {start|stop|status|restart|force-reload}" >&2
 	exit 1
 	;;
 esac
