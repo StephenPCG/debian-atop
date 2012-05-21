@@ -1,6 +1,33 @@
 atop (1.26-0) UNRELEASED; urgency=low
 
   * NOT YET RELEASED
+  * New upstream version 1.26 (Closes: #569175)
+    * repack source: remove binary that was contained in the source package
+  * use dh level 9, source format 3.0 (quilt)
+    * roll back Makefile to original state
+    * roll /var/run patch into a quilt patch
+    * roll logfile mkstemp patch into a quilt patch
+    * add README.source
+  * disable most functions of Makefile
+    * disable process accounting (no kernel patch)
+    * don't install package's init script
+    * disable upstream's cron job
+    * disable versioned symlinks
+    * disable chkconfig call from Makefile
+  * postinst: remove path from logrotate, move DEBHELPER last, set -e
+  * init script
+    * set dependency on $remote_fs
+    * remove /usr/local from PATH
+    * add status option.
+      Thanks to Peter Eisentraut (Closes: #529009)
+  * put proper Copyright statement in debian/copyright
+  * debian/control
+    * add ${misc:Depends}
+    * Standards-Version: 3.9.3 (no further changes necessary)
+    * versioned build dep on debhelper
+    * add Vcs-Lines
+  * Import sources to alioth/collab-maint
+  * add myself to uploaders (Closes: #646744)
 
  -- Marc Haber <mh+debian-packages@zugschlus.de>  Sun, 20 May 2012 21:07:13 +0000
 
