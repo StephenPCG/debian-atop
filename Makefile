@@ -32,7 +32,7 @@ atop:		atop.o    $(ALLMODS) Makefile
 		$(CC) atop.o $(ALLMODS) -o atop $(LDFLAGS)
 
 clean:
-		rm -f *.o atop
+		rm -f *.o
 
 install:	atop
 		if [ ! -d $(DESTDIR)$(LOGPATH) ]; 	\
