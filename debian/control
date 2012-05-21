@@ -6,6 +6,8 @@ Uploaders: Marc Haber <mh+debian-packages@zugschlus.de>
 Build-Depends: debhelper (>= 9~), zlib1g-dev, libncurses5-dev
 Standards-Version: 3.9.3
 Homepage: http://www.atconsultancy.nl/atop/home.html
+Vcs-Git: git://git.debian.org/git/collab-maint/atop.git
+Vcs-Browser: http://git.debian.org/?p=collab-maint/atop.git;a=summary
 
 Package: atop
 Architecture: any
