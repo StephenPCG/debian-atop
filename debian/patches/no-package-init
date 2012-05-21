@@ -1,0 +1,27 @@
+--- a/Makefile
++++ b/Makefile
+@@ -9,7 +9,6 @@
+ LOGPATH  = /var/log/atop
+ MAN1PATH = /usr/share/man/man1
+ MAN5PATH = /usr/share/man/man5
+-INIPATH  = /etc/rc.d/init.d
+ CRNPATH  = /etc/cron.d
+ ROTPATH  = /etc/logrotate.d
+ PMPATH1  = /usr/lib/pm-utils/sleep.d
+@@ -45,8 +44,6 @@
+ 			then mkdir -p $(DESTDIR)$(MAN1PATH); fi
+ 		if [ ! -d $(DESTDIR)$(MAN5PATH) ]; 	\
+ 			then mkdir -p $(DESTDIR)$(MAN5PATH); fi
+-		if [ ! -d $(DESTDIR)$(INIPATH) ]; 	\
+-			then mkdir -p $(DESTDIR)$(INIPATH); fi
+ 		if [ ! -d $(DESTDIR)$(CRNPATH) ]; 	\
+ 			then mkdir -p $(DESTDIR)$(CRNPATH); fi
+ 		if [ ! -d $(DESTDIR)$(ROTPATH) ]; 	\
+@@ -69,7 +66,6 @@
+ 		cp man/atop.1    	$(DESTDIR)$(MAN1PATH)
+ 		cp man/atopsar.1 	$(DESTDIR)$(MAN1PATH)
+ 		cp man/atoprc.5  	$(DESTDIR)$(MAN5PATH)
+-		cp atop.init     	$(DESTDIR)$(INIPATH)/atop
+ 		cp atop.cron     	$(DESTDIR)$(CRNPATH)/atop
+ 		cp psaccs_atop   	$(DESTDIR)$(ROTPATH)/psaccs_atop
+ 		cp psaccu_atop  	$(DESTDIR)$(ROTPATH)/psaccu_atop
