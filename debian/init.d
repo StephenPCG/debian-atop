@@ -29,6 +29,8 @@ test -x $DAEMON || exit 0
 
 set -e
 
+. /lib/lsb/init-functions
+
 case "$1" in
   start)
 	echo -n "Starting $DESC: "
@@ -53,10 +55,12 @@ case "$1" in
 	start-stop-daemon --start --background --quiet --exec $DAEMON -- $DARGS
 	echo "$NAME."
 	;;
+  status)
+       status_of_proc $DAEMON $NAME
+       ;;
   *)
 	N=/etc/init.d/$NAME
-	# echo "Usage: $N {start|stop|restart|reload|force-reload}" >&2
-	echo "Usage: $N {start|stop|restart|force-reload}" >&2
+	echo "Usage: $N {start|stop|restart|force-reload|status}" >&2
 	exit 1
 	;;
 esac
