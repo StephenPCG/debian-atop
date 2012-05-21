@@ -19,7 +19,7 @@
 #                    interval.
 ### END INIT INFO
 
-PATH=/usr/local/sbin:/usr/local/bin:/sbin:/bin:/usr/sbin:/usr/bin
+PATH=/sbin:/bin:/usr/sbin:/usr/bin
 DAEMON=/usr/bin/atop
 DARGS="-a -w /var/log/atop.log 600"
 NAME=atop
