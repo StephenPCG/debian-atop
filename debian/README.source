@@ -1,0 +1,5 @@
+This package is built using git, debhelper9 and quilt. It is source
+format 3.0 (quilt).
+
+The original sources have been repacked as atop_$VERSION.orig.tar.xz
+as upstream decided to ship compiled binaries in their original tarball.
