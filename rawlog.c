@@ -158,7 +158,7 @@ static const char rcsid[] = "$Id: rawlog.c,v 1.31 2010/11/17 12:43:31 gerlof Exp
 #include "photoproc.h"
 #include "photosyst.h"
 
-#define	BASEPATH	"/var/log/"  
+#define	BASEPATH	"/var/log/atop/"  
 
 /*
 ** structure which describes the raw file contents
@@ -481,7 +481,7 @@ rawread(void)
 		timenow	= time(0);
 		tp	= localtime(&timenow);
 
-		snprintf(rawname, RAWNAMESZ, "%s/atop.log",
+		snprintf(rawname, RAWNAMESZ, "%s/atop_%04d%02d%02d",
 			BASEPATH, 
 			tp->tm_year+1900,
 			tp->tm_mon+1,
@@ -566,18 +566,18 @@ rawread(void)
 		*/
 		fprintf(stderr, "Decompressing logfile ....\n");
 
-		snprintf(tmpname2, sizeof tmpname2, "/tmp/atopwrkXXXXXX");
+		snprintf(tmpname2, sizeof tmpname2, "/tmp/atopwrk%d", getpid());
+		snprintf(command,  sizeof command, "gunzip -c %s > %s",
+							tmpname1, tmpname2);
+		system (command);
 
-		if ( (rawfd = mkstemp(tmpname2)) == -1)
+		if ( (rawfd = open(tmpname2, O_RDONLY)) == -1)
 		{
 			fprintf(stderr, "%s - ", rawname);
 			perror("open decompressed raw file");
 			cleanstop(7);
 		}
 
-		snprintf(command,  sizeof command, "gunzip -c %s > %s",
-							tmpname1, tmpname2);
-		system (command);
 		unlink(tmpname2);
 	}
 
