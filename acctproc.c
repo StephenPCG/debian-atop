@@ -132,7 +132,7 @@ static const char rcsid[] = "$Id: acctproc.c,v 1.28 2010/04/23 12:20:19 gerlof E
 #include "photoproc.h"
 #include "acctproc.h"
 
-#define	ACCTDIR		"/var/run/atop"
+#define	ACCTDIR		"/tmp/atop.d"
 #define	ACCTFILE	"atop.acct"
 #define	ACCTENV		"ATOPACCT"
 
@@ -150,7 +150,6 @@ struct pacctadm {
 	char		*name;
 	struct stat	stat;
 } pacctadm[] = {
-	{ "/var/log/account/pacct",	{0, }, },
 	{ "/var/log/pacct",		{0, }, },
 	{ "/var/account/pacct",		{0, }, }
 };
@@ -337,7 +336,7 @@ acctswon(void)
 	if (semctl(semid, 1, GETVAL, 0) == SEMTOTAL)
 	{
 		/*
-		** create a new separate directory below /var/run
+		** create a new separate directory below /tmp
 		** for the accounting file;
 		** if this directory exists (e.g. previous atop-run killed)
 		** it will be cleaned and newly created
