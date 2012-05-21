@@ -8,7 +8,7 @@ Homepage: http://www.atconsultancy.nl/atop/home.html
 
 Package: atop
 Architecture: any
-Depends: ${shlibs:Depends}, logrotate
+Depends: ${shlibs:Depends}, ${misc:Depends}, logrotate
 Description: Monitor for system resources and process activity
  Atop is an ASCII full-screen performance monitor, similar to the top command,
  but atop only shows the active system-resources and processes, and only shows
