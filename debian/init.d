@@ -7,8 +7,8 @@
 # Provides:          atop
 # Required-Start:    $syslog
 # Required-Stop:     $syslog
-# Should-Start:      $local_fs
-# Should-Stop:       $local_fs
+# Should-Start:      $local_fs $remote_fs
+# Should-Stop:       $local_fs $remote_fs
 # Default-Start:     2 3 4 5
 # Default-Stop:      0 1 6
 # Short-Description: Monitor for system resources and process activity
