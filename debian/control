@@ -3,7 +3,7 @@ Section: admin
 Priority: optional
 Maintainer: Edelhard Becker <edelhard@debian.org>
 Build-Depends: debhelper (>= 4), zlib1g-dev, libncurses5-dev
-Standards-Version: 3.7.3
+Standards-Version: 3.9.3
 Homepage: http://www.atconsultancy.nl/atop/home.html
 
 Package: atop
