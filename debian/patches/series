@@ -3,3 +3,4 @@ no-psacct
 logfiles
 var-run
 no-cronjob
+no-version-symlinks
