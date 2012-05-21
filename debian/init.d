@@ -5,10 +5,10 @@
 
 ### BEGIN INIT INFO
 # Provides:          atop
-# Required-Start:    $syslog
-# Required-Stop:     $syslog
-# Should-Start:      $local_fs $remote_fs
-# Should-Stop:       $local_fs $remote_fs
+# Required-Start:    $syslog $remote_fs
+# Required-Stop:     $syslog $remote_fs
+# Should-Start:      $local_fs
+# Should-Stop:       $local_fs
 # Default-Start:     2 3 4 5
 # Default-Stop:      0 1 6
 # Short-Description: Monitor for system resources and process activity
