@@ -1,8 +1,7 @@
 Source: atop
 Section: admin
 Priority: optional
-Maintainer: Edelhard Becker <edelhard@debian.org>
-Uploaders: Marc Haber <mh+debian-packages@zugschlus.de>
+Maintainer: Marc Haber <mh+debian-packages@zugschlus.de>
 Build-Depends: debhelper (>= 9~), zlib1g-dev, libncurses5-dev
 Standards-Version: 3.9.3
 Homepage: http://www.atconsultancy.nl/atop/home.html
