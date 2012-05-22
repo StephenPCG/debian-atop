@@ -71,8 +71,8 @@ do_stop()
         #   1 if daemon was already stopped
         #   2 if daemon could not be stopped
         #   other if a failure occurred
-        start-stop-daemon --stop --quiet --retry=TERM/30/KILL/5 --pidfile $PIDFILE --name $NAME || true
-        RETVAL="$?"
+	RETVAL=0
+        start-stop-daemon --stop --quiet --retry=TERM/30/KILL/5 --pidfile $PIDFILE --name $NAME || RETVAL="$?"
         [ "$RETVAL" = 2 ] && return 2
         # Many daemons don't delete their pidfiles when they exit.
         rm -f $PIDFILE
@@ -83,16 +83,18 @@ do_stop()
 case "$1" in
   start)
 	[ "$VERBOSE" != no ] && log_daemon_msg "Starting $DESC " "$NAME"
-	do_start
-	case "$?" in
+	RET=0
+	do_start || RET=$?
+	case "$RET" in
                 0|1) [ "$VERBOSE" != no ] && log_end_msg 0 ;;
                 2) [ "$VERBOSE" != no ] && log_end_msg 1 ;;
 	esac
   ;;
   stop)
         [ "$VERBOSE" != no ] && log_daemon_msg "Stopping $DESC" "$NAME"
-        do_stop
-        case "$?" in
+	RET=0
+        do_stop || RET=$?
+        case "$RET" in
                 0|1) [ "$VERBOSE" != no ] && log_end_msg 0 ;;
                 2) [ "$VERBOSE" != no ] && log_end_msg 1 ;;
         esac
@@ -106,11 +108,13 @@ case "$1" in
         # 'force-reload' alias
         #
         log_daemon_msg "Restarting $DESC" "$NAME"
-        do_stop
-        case "$?" in
+	RET=0
+        do_stop || RET=$?
+        case "$RET" in
           0|1)
-                do_start
-                case "$?" in
+	  	RET=0
+                do_start || RET=$?
+                case "$RET" in
                         0) log_end_msg 0 ;;
                         1) log_end_msg 1 ;; # Old process is still running
                         *) log_end_msg 1 ;; # Failed to start
