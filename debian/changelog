@@ -1,3 +1,9 @@
+atop (1.26-1.0) UNRELEASED; urgency=low
+
+  * NOT YET RELEASED
+
+ -- Marc Haber <mh+debian-packages@zugschlus.de>  Tue, 22 May 2012 18:50:19 +0200
+
 atop (1.26-1) unstable; urgency=low
 
   * New upstream version 1.26 (Closes: #569175)
