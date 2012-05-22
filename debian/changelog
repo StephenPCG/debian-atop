@@ -1,6 +1,5 @@
-atop (1.26-0) UNRELEASED; urgency=low
+atop (1.26-1) unstable; urgency=low
 
-  * NOT YET RELEASED
   * New upstream version 1.26 (Closes: #569175)
     * repack source: remove binary that was contained in the source package
   * use dh level 9, source format 3.0 (quilt)
@@ -25,7 +24,7 @@ atop (1.26-0) UNRELEASED; urgency=low
     * versioned build dep on debhelper
     * add Vcs-Lines
   * Import sources to alioth/collab-maint
-  * add myself to uploaders (Closes: #646744)
+  * New Maintainer (cleared with mia@qa) (Closes: #646744)
 
  -- Marc Haber <mh+debian-packages@zugschlus.de>  Sun, 20 May 2012 21:07:13 +0000
 
