@@ -51,10 +51,11 @@ do_start()
         #   1 if daemon was already running
         #   2 if daemon could not be started
         start-stop-daemon --start --background --quiet \
-		--pidfile $PIDFILE --make-pidfile \
+		--pidfile $PIDFILE \
 		--exec $DAEMON --test > /dev/null \
                 || return 1
-        start-stop-daemon --start --background --quiet --pidfile $PIDFILE \
+        start-stop-daemon --start --background --quiet \
+	        --pidfile $PIDFILE --make-pidfile \
 		--exec $DAEMON -- \
                 $DAEMON_ARGS \
                 || return 2
