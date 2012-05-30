@@ -22,7 +22,7 @@ atop (1.26-1) unstable; urgency=low
   * postinst: remove path from logrotate, move DEBHELPER last, set -e
   * new init script
     * Thanks to Peter Eisentraut for a patch that didn't get used
-      (Closes: #529009)
+      (Closes: #529003)
   * put proper Copyright statement in debian/copyright
   * debian/control
     * add ${misc:Depends}
