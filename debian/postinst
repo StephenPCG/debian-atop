@@ -6,7 +6,7 @@ set -e
 LOGROTATE="/etc/logrotate.d/atop"
 
 if [ -f $LOGROTATE ]; then
-	logrotate -f $LOGROTATE
+	logrotate -f $LOGROTATE || true
 fi
 
 #DEBHELPER#
