@@ -1,6 +1,9 @@
 atop (1.26-1.0) UNRELEASED; urgency=low
 
   * NOT YET RELEASED
+  * fix typo in bug number in changelog. Sorry, sur5r
+  * ignore logrotate exit code, we might have already rotated today
+  * add patch to handle vd* disks as well
 
  -- Marc Haber <mh+debian-packages@zugschlus.de>  Tue, 22 May 2012 18:50:19 +0200
 
