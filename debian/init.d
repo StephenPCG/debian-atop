@@ -30,8 +30,6 @@ SCRIPTNAME=/etc/init.d/$NAME
 # Exit if the package is not installed
 [ -x $DAEMON ] || exit 0
 
-set -e
-
 . /lib/lsb/init-functions
 
 # Load the VERBOSE setting and other rcS variables
