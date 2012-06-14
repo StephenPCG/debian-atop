@@ -1,9 +1,18 @@
-atop (1.26-1.0) UNRELEASED; urgency=low
+atop (1.26-2) unstable; urgency=low
 
-  * NOT YET RELEASED
   * fix typo in bug number in changelog. Sorry, sur5r
-  * ignore logrotate exit code, we might have already rotated today
-  * add patch to handle vd* disks as well
+  * add patch to handle vd* disks as well (Closes: 640527)
+  * remove set -e from init script, /etc/init.d/skeleton doesn't have it
+  * Depend on lsb-base (>= 3.2-14) as we use log_* functions
+  * streamlinie init script with current skeleton, add default file.
+    Thanks to Vincent Lefevre (Closes: 675443)
+  * add DEP-3 headers to patches
+  * Roll back Debian patches breaking a feature:
+    * Now, only use mkstemp to create temp file
+    * Roll back Debian change: use upstream cronjob to rotate logs
+      (Closes: 611616)
+  * merge daily cron job and init script, debianize process
+  * use a wrapper to obtain correct redirection
 
  -- Marc Haber <mh+debian-packages@zugschlus.de>  Tue, 22 May 2012 18:50:19 +0200
 
