@@ -3,12 +3,12 @@ Origin: other
 Forwarded: no
 --- a/Makefile
 +++ b/Makefile
-@@ -50,8 +50,6 @@
+@@ -56,8 +56,6 @@
  		chown root		$(DESTDIR)$(BINPATH)/atop
  		chmod 04711 		$(DESTDIR)$(BINPATH)/atop
  		ln -sf atop             $(DESTDIR)$(BINPATH)/atopsar
 -		cp atop   		$(DESTDIR)$(BINPATH)/atop-$(VERS)
 -		ln -sf atop-$(VERS)     $(DESTDIR)$(BINPATH)/atopsar-$(VERS)
+ 		cp atop.daily    	$(DESTDIR)$(SCRPATH)
+ 		chmod 0755 	 	$(DESTDIR)$(SCRPATH)/atop.daily
  		cp man/atop.1    	$(DESTDIR)$(MAN1PATH)
- 		cp man/atopsar.1 	$(DESTDIR)$(MAN1PATH)
- 		cp man/atoprc.5  	$(DESTDIR)$(MAN5PATH)
