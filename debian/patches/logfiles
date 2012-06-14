@@ -1,4 +1,4 @@
-Description: Change log handling
+Description: Use mkstemp to create temp file
 Origin: other
 Forwarded: no
 --- a/rawlog.c
@@ -8,19 +8,10 @@ Forwarded: no
  #include "photosyst.h"
  
 -#define	BASEPATH	"/var/log/atop/"  
-+#define	BASEPATH	"/var/log/"
++#define	BASEPATH	"/var/log/atop/"
  
  /*
  ** structure which describes the raw file contents
-@@ -481,7 +481,7 @@
- 		timenow	= time(0);
- 		tp	= localtime(&timenow);
- 
--		snprintf(rawname, RAWNAMESZ, "%s/atop_%04d%02d%02d",
-+		snprintf(rawname, RAWNAMESZ, "%s/atop.log",
- 			BASEPATH, 
- 			tp->tm_year+1900,
- 			tp->tm_mon+1,
 @@ -566,18 +566,17 @@
  		*/
  		fprintf(stderr, "Decompressing logfile ....\n");
