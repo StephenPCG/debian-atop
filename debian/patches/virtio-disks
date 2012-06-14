@@ -1,3 +1,7 @@
+Description: make atop display statistics for vd* disks as well
+Forwarded: yes
+Author: Marc Haber <mh+debian-packages@zugschlus.de>
+Applied-Upstream: 1.27
 --- a/photosyst.c
 +++ b/photosyst.c
 @@ -1146,6 +1146,7 @@

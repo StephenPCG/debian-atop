@@ -1,3 +1,6 @@
+Description: Do not install upstream cronjob
+Origin: other
+Forwarded: no
 --- a/Makefile
 +++ b/Makefile
 @@ -5,11 +5,9 @@

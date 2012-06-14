@@ -1,3 +1,6 @@
+Description: Do not symlink binary to binary-version
+Origin: other
+Forwarded: no
 --- a/Makefile
 +++ b/Makefile
 @@ -50,8 +50,6 @@

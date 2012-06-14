@@ -1,3 +1,6 @@
+Description: Move ACCTDIR to /var/run/atop. Read from /var/log/account/pacct
+Origin: other
+Forwarded: no
 --- a/acctproc.c
 +++ b/acctproc.c
 @@ -132,7 +132,7 @@

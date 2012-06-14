@@ -1,3 +1,6 @@
+Description: Disable Red Hat specific handling of logrotate.d files
+Origin: other
+Forwarded: no
 --- a/Makefile
 +++ b/Makefile
 @@ -10,7 +10,6 @@

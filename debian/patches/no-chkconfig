@@ -1,3 +1,6 @@
+Description: Do not call chkconfig from make file
+Origin: other
+Forwarded: no
 --- a/Makefile
 +++ b/Makefile
 @@ -53,7 +53,6 @@
