@@ -23,7 +23,7 @@ PATH=/sbin:/usr/sbin:/bin:/usr/bin
 DESC="atop system monitor"
 NAME=atop
 DAEMON=/usr/bin/atop
-DAEMON_ARGS="-a -w /var/log/atop.log 600"
+DAEMON_ARGS="-a -w /var/log/atop/atop.log 600"
 PIDFILE=/var/run/$NAME.pid
 SCRIPTNAME=/etc/init.d/$NAME
 

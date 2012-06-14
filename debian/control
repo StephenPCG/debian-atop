@@ -10,7 +10,7 @@ Vcs-Browser: http://git.debian.org/?p=collab-maint/atop.git;a=summary
 
 Package: atop
 Architecture: any
-Depends: ${shlibs:Depends}, ${misc:Depends}, logrotate, lsb-base (>= 3.2-14)
+Depends: ${shlibs:Depends}, ${misc:Depends}, lsb-base (>= 3.2-14)
 Description: Monitor for system resources and process activity
  Atop is an ASCII full-screen performance monitor, similar to the top command,
  but atop only shows the active system-resources and processes, and only shows
