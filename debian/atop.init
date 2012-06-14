@@ -30,13 +30,13 @@ SCRIPTNAME=/etc/init.d/$NAME
 # Exit if the package is not installed
 [ -x $DAEMON ] || exit 0
 
-. /lib/lsb/init-functions
+# Read configuration variable file if it is present
+[ -r /etc/default/$NAME ] && . /etc/default/$NAME
 
 # Load the VERBOSE setting and other rcS variables
 . /lib/init/vars.sh
 
 # Define LSB log_* functions.
-# Depend on lsb-base (>= 3.0-6) to ensure that this file is present.
 . /lib/lsb/init-functions
 
 #
@@ -69,30 +69,26 @@ do_stop()
         #   1 if daemon was already stopped
         #   2 if daemon could not be stopped
         #   other if a failure occurred
-	RETVAL=0
-        start-stop-daemon --stop --quiet --retry=TERM/30/KILL/5 --pidfile $PIDFILE --name $NAME || RETVAL="$?"
+        start-stop-daemon --stop --quiet --retry=TERM/30/KILL/5 --pidfile $PIDFILE --name $NAME
+	RETVAL="$?"
         [ "$RETVAL" = 2 ] && return 2
-        # Many daemons don't delete their pidfiles when they exit.
         rm -f $PIDFILE
         return "$RETVAL"
 }
 
-
 case "$1" in
   start)
 	[ "$VERBOSE" != no ] && log_daemon_msg "Starting $DESC " "$NAME"
-	RET=0
-	do_start || RET=$?
-	case "$RET" in
+	do_start
+	case "$?" in
                 0|1) [ "$VERBOSE" != no ] && log_end_msg 0 ;;
                 2) [ "$VERBOSE" != no ] && log_end_msg 1 ;;
 	esac
   ;;
   stop)
         [ "$VERBOSE" != no ] && log_daemon_msg "Stopping $DESC" "$NAME"
-	RET=0
-        do_stop || RET=$?
-        case "$RET" in
+        do_stop
+        case "$?" in
                 0|1) [ "$VERBOSE" != no ] && log_end_msg 0 ;;
                 2) [ "$VERBOSE" != no ] && log_end_msg 1 ;;
         esac
@@ -101,18 +97,12 @@ case "$1" in
        status_of_proc "$DAEMON" "$NAME" && exit 0 || exit $?
        ;;
   restart|force-reload)
-        #
-        # If the "reload" option is implemented then remove the
-        # 'force-reload' alias
-        #
         log_daemon_msg "Restarting $DESC" "$NAME"
-	RET=0
-        do_stop || RET=$?
-        case "$RET" in
+        do_stop
+        case "$?" in
           0|1)
-	  	RET=0
-                do_start || RET=$?
-                case "$RET" in
+                do_start
+                case "$?" in
                         0) log_end_msg 0 ;;
                         1) log_end_msg 1 ;; # Old process is still running
                         *) log_end_msg 1 ;; # Failed to start

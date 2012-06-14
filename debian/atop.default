@@ -1,0 +1,3 @@
+# /etc/default/atop
+
+DAEMON_ARGS="-a -w /var/log/atop.log 600"
