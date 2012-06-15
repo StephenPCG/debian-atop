@@ -1,14 +1,45 @@
-Description: Install upstream cronjob as world readable
+Description: Remove upstream cron stuff, we do it differently
 Origin: other
 Forwarded: no
 --- a/Makefile
 +++ b/Makefile
-@@ -59,7 +59,7 @@
+@@ -5,11 +5,9 @@
+ DESTDIR  =
+ 
+ BINPATH  = /usr/bin
+-SCRPATH  = /etc/atop
+ LOGPATH  = /var/log/atop
+ MAN1PATH = /usr/share/man/man1
+ MAN5PATH = /usr/share/man/man5
+-CRNPATH  = /etc/cron.d
+ PMPATH1  = /usr/lib/pm-utils/sleep.d
+ PMPATH2  = /usr/lib64/pm-utils/sleep.d
+ 
+@@ -37,14 +35,10 @@
+ 			then mkdir -p $(DESTDIR)$(LOGPATH); fi
+ 		if [ ! -d $(DESTDIR)$(BINPATH) ]; 	\
+ 			then mkdir -p $(DESTDIR)$(BINPATH); fi
+-		if [ ! -d $(DESTDIR)$(SCRPATH) ]; 	\
+-			then mkdir -p $(DESTDIR)$(SCRPATH); fi
+ 		if [ ! -d $(DESTDIR)$(MAN1PATH) ]; 	\
+ 			then mkdir -p $(DESTDIR)$(MAN1PATH); fi
+ 		if [ ! -d $(DESTDIR)$(MAN5PATH) ]; 	\
+ 			then mkdir -p $(DESTDIR)$(MAN5PATH); fi
+-		if [ ! -d $(DESTDIR)$(CRNPATH) ]; 	\
+-			then mkdir -p $(DESTDIR)$(CRNPATH); fi
+ 		if [ -d $(DESTDIR)$(PMPATH1) ]; 	\
+ 			then cp 45atoppm $(DESTDIR)$(PMPATH1); 	\
+ 			chmod 0711 $(DESTDIR)$(PMPATH1)/45atoppm; fi
+@@ -58,12 +52,9 @@
+ 		ln -sf atop             $(DESTDIR)$(BINPATH)/atopsar
  		cp atop   		$(DESTDIR)$(BINPATH)/atop-$(VERS)
  		ln -sf atop-$(VERS)     $(DESTDIR)$(BINPATH)/atopsar-$(VERS)
- 		cp atop.daily    	$(DESTDIR)$(SCRPATH)
+-		cp atop.daily    	$(DESTDIR)$(SCRPATH)
 -		chmod 0711 	 	$(DESTDIR)$(SCRPATH)/atop.daily
-+		chmod 0755 	 	$(DESTDIR)$(SCRPATH)/atop.daily
  		cp man/atop.1    	$(DESTDIR)$(MAN1PATH)
  		cp man/atopsar.1 	$(DESTDIR)$(MAN1PATH)
  		cp man/atoprc.5  	$(DESTDIR)$(MAN5PATH)
+-		cp atop.cron     	$(DESTDIR)$(CRNPATH)/atop
+ 		if [ -z "$(DESTDIR)" ]; then /sbin/chkconfig --add atop; fi
+ distr: rm -f *.o
+ 		tar czvf /tmp/atop.tar.gz *
