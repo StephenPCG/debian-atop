@@ -2,3 +2,4 @@
 
 INTERVAL=600
 LOGPATH="/var/log/atop"
+OUTFILE="$LOGPATH/daily.log"
