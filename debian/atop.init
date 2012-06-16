@@ -102,8 +102,8 @@ case "$1" in
   status)
        status_of_proc "$DAEMON" "$NAME" && exit 0 || exit $?
        ;;
-  restart|force-reload|cron)
-  	[ "$1" = "cron" ] && VERBOSE="no"
+  restart|force-reload|_cron)
+  	[ "$1" = "_cron" ] && VERBOSE="no"
         [ "$VERBOSE" != no ] && log_daemon_msg "Restarting $DESC" "$NAME"
         do_stop
         case "$?" in
@@ -111,7 +111,7 @@ case "$1" in
                 do_start
                 case "$?" in
                         0) [ "$VERBOSE" != no ] && log_end_msg 0
-			   [ "$1" = "cron" ] && sleep 3 && find $LOGPATH -name 'atop_*' -mtime +28 -exec rm {} \;
+			   [ "$1" = "_cron" ] && sleep 3 && find $LOGPATH -name 'atop_*' -mtime +28 -exec rm {} \;
 		           ;;
                         1) [ "$VERBOSE" != no ] && log_end_msg 1 ;; # Old process is still running
                         *) [ "$VERBOSE" != no ] && log_end_msg 1 ;; # Failed to start
