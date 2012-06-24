@@ -1,5 +1,6 @@
-atop (1.26-2) unstable; urgency=low
+atop (1.26-1.0) UNRELEASED; urgency=low
 
+  * NOT YET RELEASED
   * fix typo in bug number in changelog. Sorry, sur5r
   * add patch to handle vd* disks as well (Closes: 640527)
   * remove set -e from init script, /etc/init.d/skeleton doesn't have it
