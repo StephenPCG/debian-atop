@@ -1,3 +1,9 @@
+atop (1.26-2.0) UNRELEASED; urgency=low
+
+  * NOT YET RELEASED
+
+ -- Marc Haber <mh+debian-packages@zugschlus.de>  Mon, 25 Jun 2012 04:26:42 +0200
+
 atop (1.26-2) unstable; urgency=low
 
   * fix typo in bug number in changelog. Sorry, sur5r
