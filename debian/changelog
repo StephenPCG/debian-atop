@@ -14,6 +14,7 @@ atop (1.26-2) unstable; urgency=low
   * merge daily cron job and init script, debianize process
   * use a wrapper to obtain correct redirection
   * add cron to Recommends
+  * remove atop binary in clean target
 
  -- Marc Haber <mh+debian-packages@zugschlus.de>  Tue, 22 May 2012 18:50:19 +0200
 
