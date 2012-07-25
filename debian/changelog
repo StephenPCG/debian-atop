@@ -2,6 +2,7 @@ atop (1.27.3-0) UNRELEASED; urgency=low
 
   * NOT YET RELEASED
   * New upstream version 1.27
+    * will not exceed 50 MB of memory allocation. Closes: #575547
 
  -- Marc Haber <mh+debian-packages@zugschlus.de>  Wed, 25 Jul 2012 22:17:28 +0200
 
