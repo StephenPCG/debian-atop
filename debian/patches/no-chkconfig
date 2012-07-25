@@ -8,6 +8,6 @@ Forwarded: no
  		cp man/atopsar.1 	$(DESTDIR)$(MAN1PATH)
  		cp man/atoprc.5  	$(DESTDIR)$(MAN5PATH)
 -		if [ -z "$(DESTDIR)" ]; then /sbin/chkconfig --add atop; fi
- distr: rm -f *.o
+ 
+ distr: rm -f *.o atop
  		tar czvf /tmp/atop.tar.gz *
- ##########################################################################

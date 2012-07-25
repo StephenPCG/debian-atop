@@ -41,5 +41,5 @@ Forwarded: no
  		cp man/atoprc.5  	$(DESTDIR)$(MAN5PATH)
 -		cp atop.cron     	$(DESTDIR)$(CRNPATH)/atop
  		if [ -z "$(DESTDIR)" ]; then /sbin/chkconfig --add atop; fi
- distr: rm -f *.o
- 		tar czvf /tmp/atop.tar.gz *
+ 
+ distr: rm -f *.o atop

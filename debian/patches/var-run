@@ -12,7 +12,7 @@ Forwarded: no
  #define	ACCTFILE	"atop.acct"
  #define	ACCTENV		"ATOPACCT"
  
-@@ -150,6 +150,7 @@
+@@ -151,6 +151,7 @@
  	char		*name;
  	struct stat	stat;
  } pacctadm[] = {
@@ -20,7 +20,7 @@ Forwarded: no
  	{ "/var/log/pacct",		{0, }, },
  	{ "/var/account/pacct",		{0, }, }
  };
-@@ -336,7 +337,7 @@
+@@ -321,7 +322,7 @@
  	if (semctl(semid, 1, GETVAL, 0) == SEMTOTAL)
  	{
  		/*
