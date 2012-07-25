@@ -1,6 +1,5 @@
 no-package-init
 no-psacct
-logfiles
 var-run
 no-cronjob
 no-version-symlinks
