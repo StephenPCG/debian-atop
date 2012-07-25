@@ -23,12 +23,13 @@
 */
 #include "netstats.h"
 
-#define	MAXCPU		64
-#define	MAXDSK		256
-#define	MAXLVM		256
-#define	MAXMDD		128
+#define	MAXCPU		2048
+#define	MAXDSK		512
+#define	MAXLVM		1024
+#define	MAXMDD		256
+#define	MAXINTF		128
+
 #define	MAXDKNAM	32
-#define	MAXINTF		32
 
 /************************************************************************/
 
@@ -44,6 +45,7 @@ struct	memstat {
 	count_t	freeswap;	/* number of free swap pages	*/
 
 	count_t	pgscans;	/* number of page scans		*/
+	count_t	pgsteal;	/* number of page steals	*/
 	count_t	allocstall;	/* try to free pages forced	*/
 	count_t	swouts;		/* number of pages swapped out	*/
 	count_t	swins;		/* number of pages swapped in	*/
