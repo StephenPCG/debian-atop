@@ -26,6 +26,9 @@
 ** --------------------------------------------------------------------------
 **
 ** $Log: rawlog.c,v $
+** Revision 1.32  2010/11/26 06:06:35  gerlof
+** Cosmetic.
+**
 ** Revision 1.31  2010/11/17 12:43:31  gerlof
 ** The flag -r followed by exactly 8 'y' characters is not considered
 ** as 8 days ago, but as a literal filename.
@@ -108,7 +111,7 @@
 **
 ** Revision 1.7  2003/01/17 07:33:39  gerlof
 ** Modified process statistics: add command-line.
-** Implement compatibility for old pstat-structure read from logfiles.
+** Implement compatibility for old tstat-structure read from logfiles.
 **
 ** Revision 1.6  2002/10/30 13:46:11  gerlof
 ** Generate notification for statistics since boot.
@@ -132,7 +135,7 @@
 **
 */
 
-static const char rcsid[] = "$Id: rawlog.c,v 1.31 2010/11/17 12:43:31 gerlof Exp $";
+static const char rcsid[] = "$Id: rawlog.c,v 1.32 2010/11/26 06:06:35 gerlof Exp $";
 
 #include <sys/types.h>
 #include <sys/param.h>
@@ -188,7 +191,7 @@ struct rawheader {
 	unsigned short	hertz;		/* clock interrupts per second   */
 	unsigned short	sfuture[6];	/* future use                    */
 	unsigned int	sstatlen;	/* length of struct sstat        */
-	unsigned int	pstatlen;	/* length of struct pstat        */
+	unsigned int	tstatlen;	/* length of struct tstat        */
 	struct utsname	utsname;	/* info about this system        */
 	char		cfuture[8];	/* future use                    */
 
@@ -207,21 +210,24 @@ struct rawrecord {
 	unsigned short	sfuture[3];	/* future use                   */
 
 	unsigned int	scomplen;	/* length of compressed sstat   */
-	unsigned int	pcomplen;	/* length of compressed pstat's */
+	unsigned int	pcomplen;	/* length of compressed tstat's */
 	unsigned int	interval;	/* interval (number of seconds) */
-	unsigned int	nlist;		/* number of processes in list  */
-	unsigned int	npresent;	/* total number of processes    */
+	unsigned int	ndeviat;	/* number of tasks in list      */
+	unsigned int	nactproc;	/* number of processes in list  */
+	unsigned int	ntask;		/* total number of tasks        */
+	unsigned int    totproc;	/* total number of processes	*/
+	unsigned int    totrun;		/* number of running  threads	*/
+	unsigned int    totslpi;	/* number of sleeping threads(S)*/
+	unsigned int    totslpu;	/* number of sleeping threads(D)*/
+	unsigned int	totzomb;	/* number of zombie processes   */
 	unsigned int	nexit;		/* number of exited processes   */
-	unsigned int    ntrun;		/* number of running  threads	*/
-	unsigned int    ntslpi;		/* number of sleeping threads(S)*/
-	unsigned int    ntslpu;		/* number of sleeping threads(D)*/
-	unsigned int	nzombie;	/* number of zombie processes   */
+	unsigned int	noverflow;	/* number of overflow processes */
 	unsigned int	ifuture[6];	/* future use                   */
 };
 
 static int	getrawrec  (int, struct rawrecord *, int);
 static int	getrawsstat(int, struct sstat *, int);
-static int	getrawpstat(int, struct pstat *, int, int);
+static int	getrawtstat(int, struct tstat *, int, int);
 static int	rawwopen(void);
 static int	lookslikedatetome(char *);
 static void	testcompval(int, char *);
@@ -233,9 +239,10 @@ static void	try_other_version(int, int);
 */
 char
 rawwrite(time_t curtime, int numsecs, 
-	 struct sstat *ss, struct pstat *ps,
-	 int nlist, int npresent, int ntrun, int ntslpi, int ntslpu,
-         int nzombie, int nexit, char flag)
+	 struct sstat *ss, struct tstat *ts, struct tstat **proclist,
+	 int ndeviat, int ntask, int nactproc,
+         int totproc, int totrun, int totslpi, int totslpu, int totzomb, 
+         int nexit, unsigned int noverflow, char flag)
 {
 	static int		rawfd = -1;
 	struct rawrecord	rr;
@@ -244,7 +251,7 @@ rawwrite(time_t curtime, int numsecs,
 
 	Byte			scompbuf[sizeof(struct sstat)], *pcompbuf;
 	unsigned long		scomplen = sizeof scompbuf;
-	unsigned long		pcomplen = sizeof(struct pstat) * nlist;
+	unsigned long		pcomplen = sizeof(struct tstat) * ndeviat;
 
 	/*
 	** first call:
@@ -268,13 +275,11 @@ rawwrite(time_t curtime, int numsecs,
 
 	testcompval(rv, "compress");
 
-	if ( (pcompbuf = malloc(pcomplen)) == NULL)
-	{
-		perror("atop malloc");
-		cleanstop(7);
-	}
+	pcompbuf = malloc(pcomplen);
 
-	rv = compress(pcompbuf, &pcomplen, (Byte *)ps, (unsigned long)pcomplen);
+	ptrverify(pcompbuf, "Malloc failed for compression buffer\n");
+
+	rv = compress(pcompbuf, &pcomplen, (Byte *)ts, (unsigned long)pcomplen);
 
 	testcompval(rv, "compress");
 
@@ -286,13 +291,16 @@ rawwrite(time_t curtime, int numsecs,
 	rr.curtime	= curtime;
 	rr.interval	= numsecs;
 	rr.flags	= 0;
-	rr.nlist	= nlist;
-	rr.npresent	= npresent;
-	rr.ntrun	= ntrun;
-	rr.ntslpi	= ntslpi;
-	rr.ntslpu	= ntslpu;
-	rr.nzombie	= nzombie;
+	rr.ndeviat	= ndeviat;
+	rr.nactproc	= nactproc;
+	rr.ntask	= ntask;
 	rr.nexit	= nexit;
+	rr.noverflow	= noverflow;
+	rr.totproc	= totproc;
+	rr.totrun	= totrun;
+	rr.totslpi	= totslpi;
+	rr.totslpu	= totslpu;
+	rr.totzomb	= totzomb;
 	rr.scomplen	= scomplen;
 	rr.pcomplen	= pcomplen;
 
@@ -378,16 +386,17 @@ rawwopen()
 		}
 
 		if ( rh.sstatlen	!= sizeof(struct sstat)		||
-		     rh.pstatlen	!= sizeof(struct pstat)		||
+		     rh.tstatlen	!= sizeof(struct tstat)		||
 	    	     rh.rawheadlen	!= sizeof(struct rawheader)	||
 		     rh.rawreclen	!= sizeof(struct rawrecord)	||
 		     rh.supportflags	!= supportflags			  )
 		{
 			fprintf(stderr,
-				"%s exists but has incompatible header\n",
+				"existing file %s has incompatible header\n",
 				rawname);
 
-			if (rh.aversion & 0x8000)
+			if (rh.aversion & 0x8000 &&
+			   (rh.aversion & 0x7fff) != getnumvers())
 			{
 				fprintf(stderr,
 					"(created by version %d.%d - "
@@ -421,7 +430,7 @@ rawwopen()
 	rh.magic	= MYMAGIC;
 	rh.aversion	= getnumvers() | 0x8000;
 	rh.sstatlen	= sizeof(struct sstat);
-	rh.pstatlen	= sizeof(struct pstat);
+	rh.tstatlen	= sizeof(struct tstat);
 	rh.rawheadlen	= sizeof(struct rawheader);
 	rh.rawreclen	= sizeof(struct rawrecord);
 	rh.supportflags	= supportflags;
@@ -451,12 +460,13 @@ rawwopen()
 void
 rawread(void)
 {
-	int			rawfd, len;
+	int			i, j, rawfd, len;
 	char			*py;
 	struct rawheader	rh;
 	struct rawrecord	rr;
 	struct sstat		devsstat;
-	struct pstat		*devpstat;
+	struct tstat		*devtstat;
+	struct tstat		**devpstat;
 
 	struct stat		filestat;
 
@@ -523,6 +533,9 @@ rawread(void)
 		** make a string existing of y's to compare with
 		*/
 		py = malloc(len+1);
+
+		ptrverify(py, "Malloc failed for 'yes' sequence\n");
+
 		memset(py, 'y', len);
 		*(py+len) = '\0';
 
@@ -565,20 +578,25 @@ rawread(void)
 		** compressed raw file to be decompressed via gunzip
 		*/
 		fprintf(stderr, "Decompressing logfile ....\n");
-
-		snprintf(tmpname2, sizeof tmpname2, "/tmp/atopwrk%d", getpid());
-		snprintf(command,  sizeof command, "gunzip -c %s > %s",
-							tmpname1, tmpname2);
-		system (command);
-
-		if ( (rawfd = open(tmpname2, O_RDONLY)) == -1)
+		snprintf(tmpname2, sizeof tmpname2, "/tmp/atopwrkXXXXXX");
+		rawfd = mkstemp(tmpname2);
+		if (rawfd == -1)
 		{
 			fprintf(stderr, "%s - ", rawname);
-			perror("open decompressed raw file");
+			perror("creating decompression temp file");
 			cleanstop(7);
 		}
 
+		snprintf(command,  sizeof command, "gunzip -c %s > %s",
+							tmpname1, tmpname2);
+		const int system_res = system (command);
 		unlink(tmpname2);
+
+		if (system_res)
+		{
+			fprintf(stderr, "%s - gunzip failed", rawname);
+			cleanstop(7);
+		}
 	}
 
 	/*
@@ -601,14 +619,15 @@ rawread(void)
 	** magic okay, but file-layout might have been modified
 	*/
 	if (rh.sstatlen   != sizeof(struct sstat)		||
-	    rh.pstatlen   != sizeof(struct pstat)		||
+	    rh.tstatlen   != sizeof(struct tstat)		||
 	    rh.rawheadlen != sizeof(struct rawheader)		||
 	    rh.rawreclen  != sizeof(struct rawrecord)		  )
 	{
 		fprintf(stderr,
 			"raw file %s has incompatible format\n", rawname);
 
-		if (rh.aversion & 0x8000)
+		if (rh.aversion & 0x8000 &&
+       		   (rh.aversion & 0x7fff) != getnumvers())
 		{
 			fprintf(stderr,
 				"(created by version %d.%d - "
@@ -617,6 +636,12 @@ rawread(void)
 				 rh.aversion       & 0xff,
 				 getnumvers() >> 8,
 				 getnumvers() & 0x7f);
+		}
+		else
+		{
+			fprintf(stderr,
+				"(files from other system architectures might"
+				" be binary incompatible)\n");
 		}
 
 		close(rawfd);
@@ -647,11 +672,9 @@ rawread(void)
 	/*
 	** allocate a list for backtracking of rawrecord-offsets
 	*/
-	if ( (offlist = malloc(sizeof(off_t) * OFFCHUNK)) == NULL)
-	{
-		perror("atop/atopsar malloc");
-		cleanstop(7);
-	}
+	offlist = malloc(sizeof(off_t) * OFFCHUNK);
+
+	ptrverify(offlist, "Malloc failed for backtrack list\n");
 
 	offsize = OFFCHUNK;
 
@@ -671,19 +694,18 @@ rawread(void)
 
 			/*
 			** store the offset of the raw record in the offset list
-			** if case of offset list overflow, extend the list
+			** in case of offset list overflow, extend the list
 			*/
 			*(offlist+offcur) = lseek(rawfd, 0, SEEK_CUR) -
 								rh.rawreclen;
 
 			if ( ++offcur >= offsize )
 			{
-				if ( (offlist = realloc(offlist,
-				     (offsize+OFFCHUNK)*sizeof(off_t))) ==NULL)
-				{
-					perror("atop/atopsar realloc");
-					cleanstop(7);
-				}
+				offlist = realloc(offlist,
+				             (offsize+OFFCHUNK)*sizeof(off_t));
+
+				ptrverify(offlist,
+				        "Realloc failed for backtrack list\n");
 
 				offsize+= OFFCHUNK;
 			}
@@ -699,7 +721,7 @@ rawread(void)
 				continue;
 			}
 
-			begintime = 0;
+			begintime = 0;	// allow earlier times from now on
 
 			if ( (endtime && endtime < secsinday) )
 			{
@@ -719,15 +741,20 @@ rawread(void)
 			** allocate space, read compressed process-level
 			** statistics and decompress
 			*/
-			if ( (devpstat =
-			       malloc(sizeof(struct pstat) * rr.nlist)) ==NULL)
-			{
-				perror("atop/atopsar malloc");
-				cleanstop(7);
-			}
+			devtstat = malloc(sizeof(struct tstat) * rr.ndeviat);
 
-			if ( !getrawpstat(rawfd, devpstat,
-					rr.pcomplen, rr.nlist) )
+			ptrverify(devtstat,
+			          "Malloc failed for %d stored tasks\n",
+			          rr.ndeviat);
+
+			devpstat = malloc(sizeof(struct tstat *) * rr.nactproc);
+
+			ptrverify(devpstat,
+			          "Malloc failed for %d stored processes\n",
+			          rr.nactproc);
+
+			if ( !getrawtstat(rawfd, devtstat,
+						rr.pcomplen, rr.ndeviat) )
 				cleanstop(7);
 
 			/*
@@ -744,12 +771,20 @@ rawread(void)
 			     lseek(rawfd, (off_t)0, SEEK_CUR) <= rh.rawreclen)
 				flags |= RRLAST;
 
+			for (i=j=0; i < rr.ndeviat; i++)
+			{
+				if ( (devtstat+i)->gen.isproc)
+					devpstat[j++] = devtstat+i;
+			}
+
 			lastcmd = (vis.show_samp)(rr.curtime, rr.interval,
-						&devsstat,    devpstat,
-					 	rr.nlist,     rr.npresent,
-					 	rr.ntrun,     rr.ntslpi,
-					 	rr.ntslpu,    rr.nzombie,
-						rr.nexit,     flags);
+			             &devsstat, devtstat, devpstat,
+		 	             rr.ndeviat,  rr.ntask, rr.nactproc,
+			             rr.totproc, rr.totrun, rr.totslpi,
+			             rr.totslpu, rr.totzomb, rr.nexit,
+			             rr.noverflow, flags);
+
+			free(devtstat);
 			free(devpstat);
 	
 			switch (lastcmd)
@@ -777,7 +812,7 @@ rawread(void)
 			}
 		}
 
-		begintime = 0;
+		begintime = 0;	// allow earlier times from now on
 
 		if (offcur >= 1)
 			offcur--;
@@ -810,10 +845,8 @@ getrawsstat(int rawfd, struct sstat *sp, int complen)
 	int		rv;
 
 	if ( (compbuf = malloc(complen)) == NULL)
-	{
-		perror("atop/atopsar malloc");
-		cleanstop(7);
-	}
+
+	ptrverify(compbuf, "Malloc failed for reading compressed sysstats\n");
 
 	if ( read(rawfd, compbuf, complen) < complen)
 		return 0;
@@ -831,17 +864,15 @@ getrawsstat(int rawfd, struct sstat *sp, int complen)
 ** read the process-level statistics from the current offset
 */
 static int
-getrawpstat(int rawfd, struct pstat *pp, int complen, int nlist)
+getrawtstat(int rawfd, struct tstat *pp, int complen, int ndeviat)
 {
 	Byte		*compbuf;
-	unsigned long	uncomplen = sizeof(struct pstat) * nlist;
+	unsigned long	uncomplen = sizeof(struct tstat) * ndeviat;
 	int		rv;
 
-	if ( (compbuf = malloc(complen)) == NULL)
-	{
-		perror("atop/atopsar malloc");
-		cleanstop(7);
-	}
+	compbuf = malloc(complen);
+
+	ptrverify(compbuf, "Malloc failed for reading compressed procstats\n");
 
 	if ( read(rawfd, compbuf, complen) < complen)
 		return 0;
@@ -945,9 +976,14 @@ try_other_version(int majorversion, int minorversion)
 
 	/*
 	** be absolutely sure not to pass setuid-root privileges
-	** to the loaded program
+	** to the loaded program; errno EAGAIN and ENOMEM are not
+	** acceptable!
 	*/
-	setresuid(getuid(), getuid(), getuid());
+	if ( setresuid(getuid(), getuid(), getuid()) == -1 && errno != EPERM)
+	{
+		fprintf(stderr, "not possible to drop root-privileges!\n");
+		exit(1);
+	}
 
 	/*
  	** load alternative executable image

@@ -30,6 +30,9 @@
 ** --------------------------------------------------------------------------
 **
 ** $Log: photosyst.c,v $
+** Revision 1.38  2010/11/19 07:40:40  gerlof
+** Support of virtual disk vd... (kvm).
+**
 ** Revision 1.37  2010/11/14 06:42:18  gerlof
 ** After opening /proc/cpuinfo, the file descriptor was not closed any more.
 **
@@ -146,7 +149,7 @@
 **
 */
 
-static const char rcsid[] = "$Id: photosyst.c,v 1.37 2010/11/14 06:42:18 gerlof Exp $";
+static const char rcsid[] = "$Id: photosyst.c,v 1.38 2010/11/19 07:40:40 gerlof Exp $";
 
 #include <sys/types.h>
 #include <stdio.h>
@@ -321,6 +324,14 @@ photosyst(struct sstat *si)
 			if ( strncmp("cpu", nam, 3) == EQ)
 			{
 				i = atoi(&nam[3]);
+
+				if (i >= MAXCPU)
+				{
+					fprintf(stderr,
+						"cpu %s exceeds maximum of %d\n",
+						nam, MAXCPU);
+					continue;
+				}
 
 				si->cpu.cpu[i].cpunr	= i;
 				si->cpu.cpu[i].utime	= cnts[0];
@@ -528,10 +539,7 @@ photosyst(struct sstat *si)
 	*/
 	if ( (fp = fopen("vmstat", "r")) != NULL)
 	{
-		int	nrfields = 9;	/* number of fields to be filled */
-
-		while ( fgets(linebuf, sizeof(linebuf), fp) != NULL &&
-								nrfields > 0)
+		while ( fgets(linebuf, sizeof(linebuf), fp) != NULL)
 		{
 			nr = sscanf(linebuf, "%s %lld", nam, &cnts[0]);
 
@@ -541,28 +549,30 @@ photosyst(struct sstat *si)
 			if ( strcmp("pswpin", nam) == EQ)
 			{
 				si->mem.swins   = cnts[0];
-				nrfields--;
 				continue;
 			}
 
 			if ( strcmp("pswpout", nam) == EQ)
 			{
 				si->mem.swouts  = cnts[0];
-				nrfields--;
-				continue;
-			}
-
-			if ( strcmp("allocstall", nam) == EQ)
-			{
-				si->mem.allocstall = cnts[0];
-				nrfields--;
 				continue;
 			}
 
 			if ( strncmp("pgscan_", nam, 7) == EQ)
 			{
 				si->mem.pgscans += cnts[0];
-				nrfields--;
+				continue;
+			}
+
+			if ( strncmp("pgsteal_", nam, 8) == EQ)
+			{
+				si->mem.pgsteal += cnts[0];
+				continue;
+			}
+
+			if ( strcmp("allocstall", nam) == EQ)
+			{
+				si->mem.allocstall = cnts[0];
 				continue;
 			}
 		}
@@ -1140,14 +1150,17 @@ static struct {
 	{ "^sd[a-z][a-z]*$",			{0},  nullmodname, DSKTYPE, },
 	{ "^dm-[0-9][0-9]*$",			{0},  lvmmapname,  LVMTYPE, },
 	{ "^md[0-9][0-9]*$",			{0},  nullmodname, MDDTYPE, },
+	{ "^vd[a-z][a-z]*$",			{0},  nullmodname, DSKTYPE, },
 	{ "^hd[a-z]$",				{0},  nullmodname, DSKTYPE, },
 	{ "^rd/c[0-9][0-9]*d[0-9][0-9]*$",	{0},  nullmodname, DSKTYPE, },
 	{ "^cciss/c[0-9][0-9]*d[0-9][0-9]*$",	{0},  nullmodname, DSKTYPE, },
 	{ "^fio[a-z][a-z]*$",			{0},  nullmodname, DSKTYPE, },
 	{ "/host.*/bus.*/target.*/lun.*/disc",	{0},  abbrevname1, DSKTYPE, },
 	{ "^xvd[a-z][a-z]*$",			{0},  nullmodname, DSKTYPE, },
+	{ "^vd[a-z][a-z]*$",                    {0},  nullmodname, DSKTYPE, },
 	{ "^dasd[a-z][a-z]*$",			{0},  nullmodname, DSKTYPE, },
 	{ "^mmcblk[0-9][0-9]*$",		{0},  nullmodname, DSKTYPE, },
+	{ "^emcpower[a-z][a-z]*$",		{0},  nullmodname, DSKTYPE, },
 };
 
 static int
