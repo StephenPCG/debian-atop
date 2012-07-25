@@ -1,8 +1,12 @@
-atop (1.27.3-0) UNRELEASED; urgency=low
+atop (1.27.3-1) experimental; urgency=low
 
-  * NOT YET RELEASED
-  * New upstream version 1.27
+  * New upstream version 1.27.3
     * will not exceed 50 MB of memory allocation. Closes: #575547
+  * upstream is no longer repacked
+  * refresh patches
+  * remove virtio-disks patch (applied upstream)
+  * remove patch logfiles (applied upstream)
+  * fix wrongly escaped quote in atoprc.5 man page
 
  -- Marc Haber <mh+debian-packages@zugschlus.de>  Wed, 25 Jul 2012 22:17:28 +0200
 
