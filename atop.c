@@ -17,7 +17,7 @@
 ** Linux-port:  June 2000
 ** Modified: 	May 2001 - Ported to kernel 2.4
 ** --------------------------------------------------------------------------
-** Copyright (C) 2000-2010 Gerlof Langeveld
+** Copyright (C) 2000-2012 Gerlof Langeveld
 **
 ** This program is free software; you can redistribute it and/or modify it
 ** under the terms of the GNU General Public License as published by the
@@ -602,7 +602,7 @@ main(int argc, char *argv[])
 	/*
 	** determine start-time for gathering current statistics
 	*/
-	curtime = getboot();
+	curtime = getboot() / hertz;
 
 	/*
 	** catch signals for proper close-down
@@ -632,7 +632,8 @@ main(int argc, char *argv[])
 	** during heavy CPU load);
 	** ignored if not running under superuser priviliges!
 	*/
-	(void) nice(-20);
+	if ( nice(-20) == -1)
+		;
 
 	/*
 	** switch-on the process-accounting mechanism to register the
@@ -645,6 +646,11 @@ main(int argc, char *argv[])
 	*/
 	initifprop();
 
+	/*
+ 	** open socket to the IP layer to issue getsockopt() calls later on
+	*/
+	netatop_ipopen();
+	
 	/*
 	** since priviliged activities are finished now, there is no
 	** need to keep running under root-priviliges, so switch
@@ -688,12 +694,13 @@ engine(void)
 	static struct tstat	*curpact;	/* current active list  */
 	static int		curplen;	/* current active size  */
 
-	struct tstat		*curpexit;	/* exitted process list	*/
+	struct tstat		*curpexit;	/* exited process list	*/
 	struct tstat		*devtstat;	/* deviation list	*/
 	struct tstat		**devpstat;	/* pointers to processes*/
 						/* in deviation list    */
 
-	unsigned int		ntask, nexit, noverflow, ndeviat, nactproc;
+	unsigned int		ntask, nexit, nexitnet;
+	unsigned int		noverflow, ndeviat, nactproc;
 	int			totproc, totrun, totslpi, totslpu, totzombie;
 
 	/*
@@ -821,8 +828,9 @@ engine(void)
 		}
 
 		/*
-		** register processes which exited during last sample;
+		** register processes that exited during last sample;
 		** first determine how many processes exited
+		**
 		** the number of exited processes is limited to avoid
 		** that atop explodes in memory and introduces OOM killing
 		*/
@@ -837,11 +845,21 @@ engine(void)
 			noverflow = 0;
 
 		/*
+		** determine how many processes have been exited
+		** for the netatop module (only processes that have
+		** used the network)
+		*/
+		if (nexit > 0 && (supportflags & NETATOPD))
+			nexitnet = netatop_exitstore();
+		else
+			nexitnet = 0;
+
+		/*
 		** reserve space for the exited processes and read them
 		*/
 		if (nexit > 0)
 		{
-			curpexit = malloc(  nexit * sizeof(struct tstat));
+			curpexit = malloc(nexit * sizeof(struct tstat));
 
 			ptrverify(curpexit,
 			          "Malloc failed for %d exited processes\n",
@@ -860,7 +878,9 @@ engine(void)
 				acctrepos(noverflow);
 		}
 		else
-			curpexit = NULL;
+		{
+			curpexit    = NULL;
+		}
 
 		/*
 		** calculate deviations
@@ -870,7 +890,7 @@ engine(void)
 		ptrverify(devtstat, "Malloc failed for %d modified processes\n",
 			          				ntask+nexit);
 
-		ndeviat = deviatproc(curpact, ntask, curpexit, nexit,
+		ndeviat = deviatproc(curpact, ntask, curpexit, nexit, 
 				deviatonly, devtstat, devsstat, &nactproc,
 				&totproc, &totrun, &totslpi, &totslpu, 
 		                &totzombie);
@@ -907,6 +927,9 @@ engine(void)
 		if (nexit > 0)
 			free(curpexit);
 
+		if (nexitnet > 0)
+			netatop_exiterase();
+
 		free(devtstat);
 		free(devpstat);
 
@@ -914,7 +937,7 @@ engine(void)
 		{
 			sampcnt = -1;
 
-			curtime = getboot();	/* reset current time */
+			curtime = getboot() / hertz;	// reset current time
 
 			/* set current (will be 'previous') counters to 0 */
 			memset(cursstat, 0,           sizeof(struct sstat));

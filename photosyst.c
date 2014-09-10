@@ -12,7 +12,7 @@
 ** Date:        November 1996
 ** LINUX-port:  June 2000
 ** --------------------------------------------------------------------------
-** Copyright (C) 2000-2010 Gerlof Langeveld
+** Copyright (C) 2000-2012 Gerlof Langeveld
 **
 ** This program is free software; you can redistribute it and/or modify it
 ** under the terms of the GNU General Public License as published by the
@@ -169,6 +169,10 @@ static const char rcsid[] = "$Id: photosyst.c,v 1.38 2010/11/19 07:40:40 gerlof 
 #include <netinet/in.h>
 #include <netdb.h>
 
+// #define	_GNU_SOURCE
+#include <sys/ipc.h>
+#include <sys/shm.h>
+
 #include "atop.h"
 #include "photosyst.h"
 
@@ -270,14 +274,18 @@ photosyst(struct sstat *si)
 	char		linebuf[1024], nam[64], origdir[1024];
 	static char	part_stats = 1; /* per-partition statistics ? */
 	unsigned int	major, minor;
+	struct shm_info	shminfo;
 #if	HTTPSTATS
 	static int	wwwvalid = 1;
 #endif
 
 	memset(si, 0, sizeof(struct sstat));
 
-	getcwd(origdir, sizeof origdir);
-	chdir("/proc");
+	if ( getcwd(origdir, sizeof origdir) == NULL)
+		cleanstop(53);
+
+	if ( chdir("/proc") == -1)
+		cleanstop(53);
 
 	/*
 	** gather various general statistics from the file /proc/stat and
@@ -596,13 +604,15 @@ photosyst(struct sstat *si)
 	si->mem.buffermem	= (count_t)-1;
 	si->mem.cachemem  	= (count_t)-1;
 	si->mem.slabmem		= (count_t) 0;
+	si->mem.slabreclaim	= (count_t) 0;
+	si->mem.shmem 		= (count_t) 0;
 	si->mem.totswap  	= (count_t)-1;
 	si->mem.freeswap 	= (count_t)-1;
 	si->mem.committed 	= (count_t) 0;
 
 	if ( (fp = fopen("meminfo", "r")) != NULL)
 	{
-		int	nrfields = 10;	/* number of fields to be filled */
+		int	nrfields = 12;	/* number of fields to be filled */
 
 		while ( fgets(linebuf, sizeof(linebuf), fp) != NULL && 
 								nrfields > 0)
@@ -673,6 +683,11 @@ photosyst(struct sstat *si)
 						nrfields--;
 					}
 				}
+			else	if (strcmp("Shmem:", nam) == EQ)
+				{
+					si->mem.shmem = cnts[0]*1024/pagesize;
+					nrfields--;
+				}
 			else	if (strcmp("SwapTotal:", nam) == EQ)
 				{
 					if (si->mem.totswap  == (count_t)-1)
@@ -694,6 +709,12 @@ photosyst(struct sstat *si)
 			else	if (strcmp("Slab:", nam) == EQ)
 				{
 					si->mem.slabmem = cnts[0]*1024/pagesize;
+					nrfields--;
+				}
+			else	if (strcmp("SReclaimable:", nam) == EQ)
+				{
+					si->mem.slabreclaim = cnts[0]*1024/
+								pagesize;
 					nrfields--;
 				}
 			else	if (strcmp("Committed_AS:", nam) == EQ)
@@ -988,7 +1009,17 @@ photosyst(struct sstat *si)
 		fclose(fp);
 	}
 
-	chdir(origdir);
+	/*
+ 	** get information about the shared memory statistics
+	*/
+	if ( shmctl(0, SHM_INFO, (struct shmid_ds *)&shminfo) != -1)
+	{
+		si->mem.shmrss = shminfo.shm_rss;
+		si->mem.shmswp = shminfo.shm_swp;
+	}
+
+	if ( chdir(origdir) == -1)
+		cleanstop(53);
 
 	/*
 	** fetch application-specific counters
@@ -1201,23 +1232,22 @@ isdisk(unsigned int major, unsigned int minor,
 
 /*
 ** LINUX SPECIFIC:
-** Determine boot-time of this system (as number of seconds since 1-1-1970).
+** Determine boot-time of this system (as number of jiffies since 1-1-1970).
 */
-time_t	getbootlinux(long);
-
-time_t
+unsigned long long
 getbootlinux(long hertz)
 {
-	int     	cpid;
-	char  	  	tmpbuf[1280];
-	FILE    	*fp;
-	unsigned long 	startticks;
-	time_t		boottime = 0;
+	int    		 	cpid;
+	char  	  		tmpbuf[1280];
+	FILE    		*fp;
+	unsigned long 		startticks;
+	unsigned long long	bootjiffies = 0;
+	struct timespec		ts;
 
 	/*
 	** dirty hack to get the boottime, since the
 	** Linux 2.6 kernel (2.6.5) does not return a proper
-	** boottime-value with the times() system call :-(
+	** boottime-value with the times() system call   :-(
 	*/
 	if ( (cpid = fork()) == 0 )
 	{
@@ -1229,10 +1259,14 @@ getbootlinux(long hertz)
 	else
 	{
 		/*
-		** parent determines start-time (in clock-ticks since boot) 
-		** of the child and calculates the boottime in seconds
+		** parent determines start-time (in jiffies since boot) 
+		** of the child and calculates the boottime in jiffies
 		** since 1-1-1970
 		*/
+		(void) clock_gettime(CLOCK_REALTIME, &ts);	// get current
+		bootjiffies = 1LL * ts.tv_sec  * hertz +
+		              1LL * ts.tv_nsec * hertz / 1000000000LL;
+
 		snprintf(tmpbuf, sizeof tmpbuf, "/proc/%d/stat", cpid);
 
 		if ( (fp = fopen(tmpbuf, "r")) != NULL)
@@ -1242,7 +1276,7 @@ getbootlinux(long hertz)
 			                "%*d %*d %*d %*d %*d %*d %lu",
 			                &startticks) == 1)
 			{
-				boottime = time(0) - startticks / hertz;
+				bootjiffies -= startticks;
 			}
 
 			fclose(fp);
@@ -1255,7 +1289,7 @@ getbootlinux(long hertz)
 		(void) wait((int *)0);
 	}
 
-	return boottime;
+	return bootjiffies;
 }
 
 #if	HTTPSTATS

@@ -161,7 +161,7 @@ static const char rcsid[] = "$Id: photoproc.c,v 1.33 2010/04/23 12:19:35 gerlof 
 #define ATOPSTAT	"%lld %llu %lld %llu %lld %llu %lld %llu "	\
 			"%lld %llu %lld %llu %lld %lld"
 
-static int	procstat(struct tstat *, time_t, char);
+static int	procstat(struct tstat *, unsigned long long, char);
 static int	procstatus(struct tstat *);
 static int	procio(struct tstat *);
 static void	proccmd(struct tstat *);
@@ -169,8 +169,8 @@ static void	proccmd(struct tstat *);
 int
 photoproc(struct tstat *tasklist, int maxtask)
 {
-	static int	firstcall = 1;
-	static time_t	bootepoch;
+	static int			firstcall = 1;
+	static unsigned long long	bootepoch;
 
 	register struct tstat	*curtask;
 
@@ -186,42 +186,18 @@ photoproc(struct tstat *tasklist, int maxtask)
 	if (firstcall)
 	{
 		/*
-		** check if this kernel is patched for additional
-		** per-task counters
+		** check if this kernel offers io-statistics per task
 		*/
-		if ( (fp = fopen("/proc/1/stat", "r")) )
+		regainrootprivs();
+
+		if ( (fp = fopen("/proc/1/io", "r")) )
 		{
-			char	line[4096];
-
-			/*
-			** when the patch is installed, the output
-			** of /proc/pid/stat contains two lines
-			*/
-			(void) fgets(line, sizeof line, fp);
-
-			if ( fgets(line, sizeof line, fp) != NULL)
-				supportflags |= PATCHSTAT;
-
+			supportflags |= IOSTAT;
 			fclose(fp);
 		}
 
-		/*
-		** check if this kernel offers io-statistics per task
-		*/
-		if ( !(supportflags & PATCHSTAT) )
-		{
-			regainrootprivs();
-
-			if ( (fp = fopen("/proc/1/io", "r")) )
-			{
-				supportflags |= IOSTAT;
-
-				fclose(fp);
-			}
-
-			if (! droprootprivs())
-				cleanstop(42);
-		}
+		if (! droprootprivs())
+			cleanstop(42);
 
 		/*
  		** find epoch time of boot moment
@@ -232,10 +208,25 @@ photoproc(struct tstat *tasklist, int maxtask)
 	}
 
 	/*
+	** probe if the netatop module and (optionally) the
+	** netatopd daemon are active
+	*/
+	regainrootprivs();
+
+	netatop_probe();
+
+	if (! droprootprivs())
+		cleanstop(42);
+
+	/*
 	** read all subdirectory-names below the /proc directory
 	*/
-	getcwd(origdir, sizeof origdir);
-	chdir("/proc");
+	if ( getcwd(origdir, sizeof origdir) == NULL)
+		cleanstop(53);
+
+	if ( chdir("/proc") == -1)
+		cleanstop(53);
+
 	dirp = opendir(".");
 
 	while ( (entp = readdir(dirp)) && tval < maxtask )
@@ -259,23 +250,26 @@ photoproc(struct tstat *tasklist, int maxtask)
 
 		if ( !procstat(curtask, bootepoch, 1)) /* from /proc/pid/stat */
 		{
-			chdir("..");
+			if ( chdir("..") == -1);
 			continue;
 		}
 
 		if ( !procstatus(curtask) )	    /* from /proc/pid/status  */
 		{
-			chdir("..");
+			if ( chdir("..") == -1);
 			continue;
 		}
 
 		if ( !procio(curtask) )		    /* from /proc/pid/io      */
 		{
-			chdir("..");
+			if ( chdir("..") == -1);
 			continue;
 		}
 
 		proccmd(curtask);		    /* from /proc/pid/cmdline */
+
+		// read network stats from netatop
+		netatop_gettask(curtask->gen.tgid, 'g', curtask);
 
 		tval++;		/* increment for process-level info */
 
@@ -312,19 +306,19 @@ photoproc(struct tstat *tasklist, int maxtask)
 
 					if ( !procstat(curthr, bootepoch, 0))
 					{
-						chdir("..");
+						if ( chdir("..") == -1);
 						continue;
 					}
 			
 					if ( !procstatus(curthr) )
 					{
-						chdir("..");
+						if ( chdir("..") == -1);
 						continue;
 					}
 
 					if ( !procio(curthr) )
 					{
-						chdir("..");
+						if ( chdir("..") == -1);
 						continue;
 					}
 
@@ -343,21 +337,27 @@ photoproc(struct tstat *tasklist, int maxtask)
 
 					curthr->gen.nthr = 1;
 
+					// read network stats from netatop
+					netatop_gettask(curthr->gen.pid, 't',
+									curthr);
+
+					// all stats read now
 					tval++;	    /* increment thread-level */
-					chdir("..");	/* leave thread's dir */
+					if ( chdir("..") == -1); /* thread */
 				}
 
 				closedir(dirtask);
-				chdir("..");	/* leave "task" directory */
+				if ( chdir("..") == -1); /* leave task */
 			}
 		}
 
-		chdir("..");	/* leave process-level directry */
+		if ( chdir("..") == -1); /* leave process-level directry */
 	}
 
 	closedir(dirp);
 
-	chdir(origdir);
+	if ( chdir(origdir) == -1)
+		cleanstop(53);
 
 	return tval;
 }
@@ -373,8 +373,12 @@ countprocs(void)
 	struct dirent	*entp;
 	char		origdir[1024];
 
-	getcwd(origdir, sizeof origdir);
-	chdir("/proc");
+	if ( getcwd(origdir, sizeof origdir) == NULL)
+		cleanstop(53);
+
+	if ( chdir("/proc") == -1)
+		cleanstop(53);
+
 	dirp = opendir(".");
 
 	while ( (entp = readdir(dirp)) )
@@ -388,7 +392,8 @@ countprocs(void)
 
 	closedir(dirp);
 
-	chdir(origdir);
+	if ( chdir(origdir) == -1)
+		cleanstop(53);
 
 	return nr;
 }
@@ -397,7 +402,7 @@ countprocs(void)
 ** open file "stat" and obtain required info
 */
 static int
-procstat(struct tstat *curtask, time_t bootepoch, char isproc)
+procstat(struct tstat *curtask, unsigned long long bootepoch, char isproc)
 {
 	FILE	*fp;
 	int	nr;
@@ -452,25 +457,10 @@ procstat(struct tstat *curtask, time_t bootepoch, char isproc)
 	/*
  	** normalization
 	*/
-	curtask->gen.btime   = curtask->gen.btime/hertz+bootepoch;
+	curtask->gen.btime   = (curtask->gen.btime+bootepoch)/hertz;
 	curtask->cpu.prio   += 100; 	/* was subtracted by kernel */
 	curtask->mem.vmem   /= 1024;
 	curtask->mem.rmem   *= pagesize/1024;
-
-	/*
- 	** second line present for patched kernel?
-	*/
-	if ( fgets(line, sizeof line, fp) != NULL)
-	{
-		sscanf(line, ATOPSTAT,
-			&(curtask->dsk.rio),	&(curtask->dsk.rsz),
-			&(curtask->dsk.wio),	&(curtask->dsk.wsz),
-			&(curtask->net.tcpsnd),	&(curtask->net.tcpssz),
-			&(curtask->net.tcprcv),	&(curtask->net.tcprsz),
-			&(curtask->net.udpsnd),	&(curtask->net.udpssz),
-			&(curtask->net.udprcv),	&(curtask->net.udprsz),
-			&(curtask->net.rawsnd),	&(curtask->net.rawrcv));
-	}
 
 	fclose(fp);
 
@@ -599,7 +589,7 @@ procio(struct tstat *curtask)
 {
 	FILE	*fp;
 	char	line[4096];
-	count_t	dskrsz, dskwsz, dskcwsz;
+	count_t	dskrsz=0, dskwsz=0, dskcwsz=0;
 
 	if (supportflags & IOSTAT)
 	{

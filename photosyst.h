@@ -52,7 +52,12 @@ struct	memstat {
 
 	count_t	commitlim;	/* commit limit in pages	*/
 	count_t	committed;	/* number of reserved pages	*/
-	count_t	cfuture[4];	/* reserved for future use	*/
+
+	count_t	shmem;		/* tot shmem incl. tmpfs (pag)	*/
+	count_t	shmrss;		/* resident shared memory (pag)	*/
+	count_t	shmswp;		/* swapped shared memory (pag)	*/
+
+	count_t	slabreclaim;	/* reclaimable slab (pages)     */
 };
 
 /************************************************************************/
