@@ -3,7 +3,7 @@ Origin: other
 Forwarded: no
 --- a/Makefile
 +++ b/Makefile
-@@ -50,8 +50,6 @@
+@@ -52,8 +52,6 @@
  		chown root		$(DESTDIR)$(BINPATH)/atop
  		chmod 04711 		$(DESTDIR)$(BINPATH)/atop
  		ln -sf atop             $(DESTDIR)$(BINPATH)/atopsar

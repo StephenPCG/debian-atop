@@ -1,3 +1,10 @@
+atop (2.0.2-1) experimental; urgency=medium
+
+  * remove manpage-syntax patch (applied upstream)
+  * refresh all other patches to fit the new code
+
+ -- Zhang Cheng <stephenpcg@gmail.com>  Wed, 10 Sep 2014 22:28:32 +0800
+
 atop (1.27.3-1.0) UNRELEASED; urgency=low
 
   * NOT YET RELEASED

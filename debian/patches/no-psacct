@@ -11,7 +11,7 @@ Forwarded: no
  PMPATH1  = /usr/lib/pm-utils/sleep.d
  PMPATH2  = /usr/lib64/pm-utils/sleep.d
  
-@@ -46,8 +45,6 @@
+@@ -48,8 +47,6 @@
  			then mkdir -p $(DESTDIR)$(MAN5PATH); fi
  		if [ ! -d $(DESTDIR)$(CRNPATH) ]; 	\
  			then mkdir -p $(DESTDIR)$(CRNPATH); fi
@@ -20,7 +20,7 @@ Forwarded: no
  		if [ -d $(DESTDIR)$(PMPATH1) ]; 	\
  			then cp 45atoppm $(DESTDIR)$(PMPATH1); 	\
  			chmod 0711 $(DESTDIR)$(PMPATH1)/45atoppm; fi
-@@ -67,10 +64,6 @@
+@@ -69,10 +66,6 @@
  		cp man/atopsar.1 	$(DESTDIR)$(MAN1PATH)
  		cp man/atoprc.5  	$(DESTDIR)$(MAN5PATH)
  		cp atop.cron     	$(DESTDIR)$(CRNPATH)/atop
@@ -28,6 +28,6 @@ Forwarded: no
 -		cp psaccu_atop  	$(DESTDIR)$(ROTPATH)/psaccu_atop
 -		touch          	  	$(DESTDIR)$(LOGPATH)/dummy_before
 -		touch            	$(DESTDIR)$(LOGPATH)/dummy_after
- 		if [ -z "$(DESTDIR)" ]; then /sbin/chkconfig --add atop; fi
+ 		if [ -z "$(DESTDIR)" -a -f /sbin/chkconfig ]; then /sbin/chkconfig --add atop; fi
+ 		if [ -z "$(DESTDIR)" -a -f /usr/sbin/update-rc.d ]; then update-rc.d atop defaults; fi
  
- distr: rm -f *.o atop

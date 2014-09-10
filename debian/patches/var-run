@@ -3,7 +3,7 @@ Origin: other
 Forwarded: no
 --- a/acctproc.c
 +++ b/acctproc.c
-@@ -132,7 +132,7 @@
+@@ -134,7 +134,7 @@
  #include "photoproc.h"
  #include "acctproc.h"
  
@@ -12,7 +12,7 @@ Forwarded: no
  #define	ACCTFILE	"atop.acct"
  #define	ACCTENV		"ATOPACCT"
  
-@@ -151,6 +151,7 @@
+@@ -153,6 +153,7 @@
  	char		*name;
  	struct stat	stat;
  } pacctadm[] = {
@@ -20,7 +20,7 @@ Forwarded: no
  	{ "/var/log/pacct",		{0, }, },
  	{ "/var/account/pacct",		{0, }, }
  };
-@@ -321,7 +322,7 @@
+@@ -323,7 +324,7 @@
  	if (semctl(semid, 1, GETVAL, 0) == SEMTOTAL)
  	{
  		/*

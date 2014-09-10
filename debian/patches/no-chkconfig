@@ -3,11 +3,11 @@ Origin: other
 Forwarded: no
 --- a/Makefile
 +++ b/Makefile
-@@ -53,7 +53,6 @@
+@@ -55,7 +55,6 @@
  		cp man/atop.1    	$(DESTDIR)$(MAN1PATH)
  		cp man/atopsar.1 	$(DESTDIR)$(MAN1PATH)
  		cp man/atoprc.5  	$(DESTDIR)$(MAN5PATH)
--		if [ -z "$(DESTDIR)" ]; then /sbin/chkconfig --add atop; fi
+-		if [ -z "$(DESTDIR)" -a -f /sbin/chkconfig ]; then /sbin/chkconfig --add atop; fi
+ 		if [ -z "$(DESTDIR)" -a -f /usr/sbin/update-rc.d ]; then update-rc.d atop defaults; fi
  
  distr: rm -f *.o atop
- 		tar czvf /tmp/atop.tar.gz *
