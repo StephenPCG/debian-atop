@@ -108,6 +108,7 @@ static const char rcsid[] = "$Id: showprocs.c,v 1.15 2011/09/05 11:44:16 gerlof 
 #include "showgeneric.h"
 #include "showlinux.h"
 
+static void	format_bandw(char *, count_t);
 
 static char     *columnhead[] = {
 	[MSORTCPU]= "CPU", [MSORTMEM]= "MEM",
@@ -529,7 +530,7 @@ procprt_SYSCPU_ae(struct tstat *curstat, int avgval, int nsecs)
 }
 
 proc_printdef procprt_SYSCPU = 
-   { " SYSCPU", "SYSCPU", procprt_SYSCPU_ae, procprt_SYSCPU_ae, 7 };
+   { "SYSCPU", "SYSCPU", procprt_SYSCPU_ae, procprt_SYSCPU_ae, 6 };
 /***************************************************************/
 char *
 procprt_USRCPU_ae(struct tstat *curstat, int avgval, int nsecs)
@@ -541,7 +542,7 @@ procprt_USRCPU_ae(struct tstat *curstat, int avgval, int nsecs)
 }
 
 proc_printdef procprt_USRCPU = 
-   { " USRCPU", "USRCPU", procprt_USRCPU_ae, procprt_USRCPU_ae, 7 };
+   { "USRCPU", "USRCPU", procprt_USRCPU_ae, procprt_USRCPU_ae, 6 };
 /***************************************************************/
 char *
 procprt_VGROW_a(struct tstat *curstat, int avgval, int nsecs)
@@ -1355,45 +1356,7 @@ proc_printdef procprt_NPROCS =
    { "NPROCS", "NPROCS", procprt_NPROCS_ae, procprt_NPROCS_ae, 6 };
 /***************************************************************/
 char *
-procprt_NRDDSK_ae(struct tstat *curstat, int avgval, int nsecs)    // with patches && ACCT
-{
-        static char buf[10];
-        val2valstr(curstat->dsk.rio, buf, 6, avgval, nsecs);
-
-        return buf;
-}
-
-proc_printdef procprt_RDDSK = 
-   { " RDDSK", "RDDSK", procprt_NRDDSK_ae, procprt_NRDDSK_ae, 6 };
-/***************************************************************/
-char *
-procprt_NWRDSK_a(struct tstat *curstat, int avgval, int nsecs)    // with patches && ACCT
-{
-        static char buf[10];
-        val2valstr(curstat->dsk.wio, buf, 6, avgval, nsecs);
-
-        return buf;
-}
-
-proc_printdef procprt_WRDSK = 
-   { " WRDSK", "WRDSK", procprt_NWRDSK_a, procprt_NWRDSK_a, 6 };
-/***************************************************************/
-char *
-procprt_NRDDSK_e(struct tstat *curstat, int avgval, int nsecs)      // with patches, no ACCT
-{
-        return " (r&w)";
-}
-/***************************************************************/
-char *
-procprt_NWRDSK_e(struct tstat *curstat, int avgval, int nsecs)    // patches, no ACCT
-{
-        static char buf[10];
-        val2valstr(curstat->dsk.rio, buf, 6, avgval, nsecs);  // r and w!
-        return buf;
-}
-/***************************************************************/
-char *
-procprt_RDDSK_IOSTAT_a(struct tstat *curstat, int avgval, int nsecs)   // IOSTAT based 
+procprt_RDDSK_a(struct tstat *curstat, int avgval, int nsecs)
 {
         static char buf[10];
         val2memstr(curstat->dsk.rsz*512, buf, KBFORMAT, 0, 0);
@@ -1402,28 +1365,54 @@ procprt_RDDSK_IOSTAT_a(struct tstat *curstat, int avgval, int nsecs)   // IOSTAT
 }
 
 char *
-procprt_RDDSK_IOSTAT_e(struct tstat *curstat, int avgval, int nsecs)
+procprt_RDDSK_e(struct tstat *curstat, int avgval, int nsecs)
 {
         return "     -";
 }
+
+proc_printdef procprt_RDDSK = 
+   { " RDDSK", "RDDSK", procprt_RDDSK_a, procprt_RDDSK_e, 6 };
 /***************************************************************/
 char *
-procprt_WRDSK_IOSTAT_a(struct tstat *curstat, int avgval, int nsecs)    // IOSTAT based
+procprt_WRDSK_a(struct tstat *curstat, int avgval, int nsecs) 
 {
         static char buf[10];
+
         val2memstr(curstat->dsk.wsz*512, buf, KBFORMAT, 0, 0);
 
         return buf;
 }
 
 char *
-procprt_WRDSK_IOSTAT_e(struct tstat *curstat, int avgval, int nsecs)
+procprt_WRDSK_e(struct tstat *curstat, int avgval, int nsecs)
 {
         return "     -";
 }
+
+proc_printdef procprt_WRDSK = 
+   { " WRDSK", "WRDSK", procprt_WRDSK_a, procprt_WRDSK_e, 6 };
 /***************************************************************/
 char *
-procprt_WCANCEL_IOSTAT_a(struct tstat *curstat, int avgval, int nsecs)  // IOSTAT based */
+procprt_CWRDSK_a(struct tstat *curstat, int avgval, int nsecs) 
+{
+	count_t nett_wsz;
+        static char buf[10];
+
+	if (curstat->dsk.wsz > curstat->dsk.cwsz)
+		nett_wsz = curstat->dsk.wsz - curstat->dsk.cwsz;
+	else
+		nett_wsz = 0;
+
+        val2memstr(nett_wsz*512, buf, KBFORMAT, 0, 0);
+
+        return buf;
+}
+
+proc_printdef procprt_CWRDSK = 
+   {" WRDSK", "CWRDSK", procprt_CWRDSK_a, procprt_WRDSK_e, 6 };
+/***************************************************************/
+char *
+procprt_WCANCEL_a(struct tstat *curstat, int avgval, int nsecs)
 {
         static char buf[10];
         val2memstr(curstat->dsk.cwsz*512, buf, KBFORMAT, 0, 0);
@@ -1432,80 +1421,13 @@ procprt_WCANCEL_IOSTAT_a(struct tstat *curstat, int avgval, int nsecs)  // IOSTA
 }
 
 char *
-procprt_WCANCEL_IOSTAT_e(struct tstat *curstat, int avgval, int nsecs)
+procprt_WCANCEL_e(struct tstat *curstat, int avgval, int nsecs)
 {
         return "     -";
 }
 
-proc_printdef procprt_WCANCEL_IOSTAT = 
-   { "WCANCL", "WCANCL", procprt_WCANCEL_IOSTAT_a, procprt_WCANCEL_IOSTAT_e, 6 };
-/***************************************************************/
-char *
-procprt_AVGRSZ_PATCH_ae(struct tstat *curstat, int avgval, int nsecs)        // patch based
-{
-        static char buf[10];
-        int avgrsz = curstat->dsk.rio ?
-                                curstat->dsk.rsz * 512LL / curstat->dsk.rio : 0;
-        val2valstr(avgrsz, buf, 7, 0, 0);
-
-        return buf;
-}
-
-proc_printdef procprt_AVGRSZ = 
-   { " AVGRSZ", "AVGRSZ", procprt_AVGRSZ_PATCH_ae, procprt_AVGRSZ_PATCH_ae, 7 };
-/***************************************************************/
-char *
-procprt_AVGWSZ_PATCH_ae(struct tstat *curstat, int avgval, int nsecs) 
-{
-        static char buf[10];
-        int avgwsz = curstat->dsk.wio ?
-                                curstat->dsk.wsz * 512LL / curstat->dsk.wio : 0;
-        val2valstr(avgwsz, buf, 7, 0, 0);
-
-        return buf;
-}
-
-proc_printdef procprt_AVGWSZ = 
-   { " AVGWSZ", "AVGWSZ", procprt_AVGWSZ_PATCH_ae, procprt_AVGWSZ_PATCH_ae, 7 };
-/***************************************************************/
-char *
-procprt_TOTRSZ_ae(struct tstat *curstat, int avgval, int nsecs)    // patch and ACCT
-{
-        static char buf[10];
-        val2memstr(curstat->dsk.rsz*512LL, buf, KBFORMAT, avgval, nsecs);
-
-        return buf;
-}
-
-proc_printdef procprt_TOTRSZ = 
-   { "TOTRSZ", "TOTRSZ", procprt_TOTRSZ_ae, procprt_TOTRSZ_ae, 6 };
-/***************************************************************/
-char *
-procprt_TOTWSZ_ae(struct tstat *curstat, int avgval, int nsecs)    // patch and ACCT
-{
-        static char buf[10];
-        val2memstr(curstat->dsk.wsz*512LL, buf, KBFORMAT, avgval, nsecs);
-
-        return buf;
-}
-
-proc_printdef procprt_TOTWSZ = 
-   { "TOTWSZ", "TOTWSZ", procprt_TOTWSZ_ae, procprt_TOTWSZ_ae, 6 };
-/***************************************************************/
-char *
-procprt_TOTRSZ_NOACCT_e(struct tstat *curstat, int avgval, int nsecs)    // patch noACCT
-{
-        static char buf[10];
-        val2memstr(curstat->dsk.rsz*512LL, buf, KBFORMAT, avgval, nsecs);
-
-        return buf;
-}
-/***************************************************************/
-char *
-procprt_TOTWSZ_NOACCT_e(struct tstat *curstat, int avgval, int nsecs)    // patch noACCT
-{
-        return "(r & w)";
-}
+proc_printdef procprt_WCANCEL = 
+   {"WCANCL", "WCANCL", procprt_WCANCEL_a, procprt_WCANCEL_e, 6};
 /***************************************************************/
 char *
 procprt_TCPRCV_a(struct tstat *curstat, int avgval, int nsecs)
@@ -1520,7 +1442,16 @@ procprt_TCPRCV_a(struct tstat *curstat, int avgval, int nsecs)
 char *
 procprt_TCPRCV_e(struct tstat *curstat, int avgval, int nsecs) 
 {      
-        return "     -";
+	if (supportflags & NETATOPD)
+	{
+        	static char buf[10];
+        
+        	val2valstr(curstat->net.tcprcv, buf, 6, avgval, nsecs);
+
+        	return buf;
+	}
+	else
+        	return "     -";
 }
 
 
@@ -1542,7 +1473,18 @@ procprt_TCPRASZ_a(struct tstat *curstat, int avgval, int nsecs)
 char *
 procprt_TCPRASZ_e(struct tstat *curstat, int avgval, int nsecs)
 {
-        return "      -";
+	if (supportflags & NETATOPD)
+	{
+        	static char buf[10];
+        
+        	int avgtcpr = curstat->net.tcprcv ?
+                                  curstat->net.tcprsz / curstat->net.tcprcv : 0;
+
+        	val2valstr(avgtcpr, buf, 7, 0, 0);
+	        return buf;
+	}
+	else
+        	return "      -";
 }
 
 proc_printdef procprt_TCPRASZ = 
@@ -1561,7 +1503,16 @@ procprt_TCPSND_a(struct tstat *curstat, int avgval, int nsecs)
 char *
 procprt_TCPSND_e(struct tstat *curstat, int avgval, int nsecs)
 {
-        return "     -";
+	if (supportflags & NETATOPD)
+	{
+        	static char buf[10];
+        
+        	val2valstr(curstat->net.tcpsnd, buf, 6, avgval, nsecs);
+
+        	return buf;
+	}
+	else
+        	return "     -";
 }
 
 proc_printdef procprt_TCPSND = 
@@ -1582,7 +1533,18 @@ procprt_TCPSASZ_a(struct tstat *curstat, int avgval, int nsecs)
 char *
 procprt_TCPSASZ_e(struct tstat *curstat, int avgval, int nsecs)
 {
-        return "      -";
+	if (supportflags & NETATOPD)
+	{
+        	static char buf[10];
+        
+        	int avgtcps = curstat->net.tcpsnd ?
+                                  curstat->net.tcpssz / curstat->net.tcpsnd : 0;
+
+        	val2valstr(avgtcps, buf, 7, 0, 0);
+        	return buf;
+	}
+	else
+        	return "      -";
 }
 
 
@@ -1601,8 +1563,17 @@ procprt_UDPRCV_a(struct tstat *curstat, int avgval, int nsecs)
 
 char *
 procprt_UDPRCV_e(struct tstat *curstat, int avgval, int nsecs) 
-{     
-        return "     -";
+{
+	if (supportflags & NETATOPD)
+	{
+        	static char buf[10];
+        
+        	val2valstr(curstat->net.udprcv, buf, 6, avgval, nsecs);
+
+        	return buf;
+	}
+	else
+        	return "     -";
 }
 
 
@@ -1624,7 +1595,18 @@ procprt_UDPRASZ_a(struct tstat *curstat, int avgval, int nsecs)
 char *
 procprt_UDPRASZ_e(struct tstat *curstat, int avgval, int nsecs)
 {
-        return "      -";
+	if (supportflags & NETATOPD)
+	{
+        	static char buf[10];
+        
+        	int avgudpr = curstat->net.udprcv ?
+                          curstat->net.udprsz / curstat->net.udprcv : 0;
+
+        	val2valstr(avgudpr, buf, 7, 0, 0);
+        	return buf;
+	}
+	else
+        	return "      -";
 }
 
 
@@ -1644,7 +1626,16 @@ procprt_UDPSND_a(struct tstat *curstat, int avgval, int nsecs)
 char *
 procprt_UDPSND_e(struct tstat *curstat, int avgval, int nsecs)
 {
-        return "     -";
+	if (supportflags & NETATOPD)
+	{
+        	static char buf[10];
+        
+        	val2valstr(curstat->net.udpsnd, buf, 6, avgval, nsecs);
+
+        	return buf;
+	}
+	else
+        	return "     -";
 }
 
 proc_printdef procprt_UDPSND = 
@@ -1665,7 +1656,18 @@ procprt_UDPSASZ_a(struct tstat *curstat, int avgval, int nsecs)
 char *
 procprt_UDPSASZ_e(struct tstat *curstat, int avgval, int nsecs)
 {
-        return "      -";
+	if (supportflags & NETATOPD)
+	{
+        	static char buf[10];
+        
+        	int avgudps = curstat->net.udpsnd ?
+                                  curstat->net.udpssz / curstat->net.udpsnd : 0;
+
+        	val2valstr(avgudps, buf, 7, 0, 0);
+        	return buf;
+	}
+	else
+        	return "      -";
 }
 
 
@@ -1673,50 +1675,12 @@ proc_printdef procprt_UDPSASZ =
    { "UDPSASZ", "UDPSASZ", procprt_UDPSASZ_a, procprt_UDPSASZ_e, 7 };
 /***************************************************************/
 char *
-procprt_RAWSND_a(struct tstat *curstat, int avgval, int nsecs)
-{
-        static char buf[10];
-        
-        val2valstr(curstat->net.rawsnd, buf, 6, avgval, nsecs);
-
-        return buf;
-}
-
-char *
-procprt_RAWSND_e(struct tstat *curstat, int avgval, int nsecs)
-{
-        return "     -";
-}
-
-proc_printdef procprt_RAWSND = 
-   { "RAWSND", "RAWSND", procprt_RAWSND_a, procprt_RAWSND_e, 6 };
-/***************************************************************/
-char *
-procprt_RAWRCV_a(struct tstat *curstat, int avgval, int nsecs)
-{
-        static char buf[10];
-        
-        val2valstr(curstat->net.rawrcv, buf, 6, avgval, nsecs);
-
-        return buf;
-}
-
-char *
-procprt_RAWRCV_e(struct tstat *curstat, int avgval, int nsecs)
-{
-        return "     -";
-}
-
-proc_printdef procprt_RAWRCV = 
-   { "RAWRCV", "RAWRCV", procprt_RAWRCV_a, procprt_RAWRCV_e, 6 };
-/***************************************************************/
-char *
 procprt_RNET_a(struct tstat *curstat, int avgval, int nsecs)
 {
         static char buf[10];
         
-        val2valstr(curstat->net.tcprcv + curstat->net.udprcv + 
-                           curstat->net.rawrcv,  buf, 4, avgval, nsecs);
+        val2valstr(curstat->net.tcprcv + curstat->net.udprcv ,
+					buf, 5, avgval, nsecs);
 
         return buf;
 }
@@ -1724,11 +1688,135 @@ procprt_RNET_a(struct tstat *curstat, int avgval, int nsecs)
 char *
 procprt_RNET_e(struct tstat *curstat, int avgval, int nsecs)
 {
-        return "   -";
+	if (supportflags & NETATOPD)
+	{
+        	static char buf[10];
+ 
+	        val2valstr(curstat->net.tcprcv + curstat->net.udprcv ,
+					buf, 5, avgval, nsecs);
+
+       		return buf;
+	}
+	else
+        	return "    -";
 }
 
 proc_printdef procprt_RNET = 
-   { "RNET", "RNET", procprt_RNET_a, procprt_RNET_e, 4 };
+   { " RNET", "RNET", procprt_RNET_a, procprt_RNET_e, 5 };
+/***************************************************************/
+char *
+procprt_SNET_a(struct tstat *curstat, int avgval, int nsecs)
+{
+        static char buf[10];
+        
+        val2valstr(curstat->net.tcpsnd + curstat->net.udpsnd,
+                           		buf, 5, avgval, nsecs);
+        return buf;
+}
+
+char *
+procprt_SNET_e(struct tstat *curstat, int avgval, int nsecs)
+{
+	if (supportflags & NETATOPD)
+	{
+	        static char buf[10];
+        
+       		val2valstr(curstat->net.tcpsnd + curstat->net.udpsnd,
+                           		buf, 5, avgval, nsecs);
+	        return buf;
+	}
+	else
+        	return "    -";
+}
+
+proc_printdef procprt_SNET = 
+   { " SNET", "SNET", procprt_SNET_a, procprt_SNET_e, 5 };
+/***************************************************************/
+char *
+procprt_RNETBW_a(struct tstat *curstat, int avgval, int nsecs)
+{
+        static char buf[16];
+	count_t     rkbps = (curstat->net.tcprsz+curstat->net.udprsz)/125/nsecs;
+
+	format_bandw(buf, rkbps);
+        return buf;
+}
+
+char *
+procprt_RNETBW_e(struct tstat *curstat, int avgval, int nsecs)
+{
+	if (supportflags & NETATOPD)
+	{
+        	static char buf[16];
+		count_t     rkbps = (curstat->net.tcprsz + curstat->net.udprsz)
+								/125/nsecs;
+
+		format_bandw(buf, rkbps);
+        	return buf;
+	}
+	else
+        	return "        -";
+}
+
+proc_printdef procprt_RNETBW = 
+   { "   BANDWI", "RNETBW", procprt_RNETBW_a, procprt_RNETBW_e, 9};
+/***************************************************************/
+char *
+procprt_SNETBW_a(struct tstat *curstat, int avgval, int nsecs)
+{
+        static char buf[16];
+	count_t     skbps = (curstat->net.tcpssz+curstat->net.udpssz)/125/nsecs;
+
+	format_bandw(buf, skbps);
+        return buf;
+}
+
+char *
+procprt_SNETBW_e(struct tstat *curstat, int avgval, int nsecs)
+{
+	if (supportflags & NETATOPD)
+	{
+        	static char buf[16];
+		count_t     skbps = (curstat->net.tcpssz + curstat->net.udpssz)
+								/125/nsecs;
+
+		format_bandw(buf, skbps);
+       		return buf;
+	}
+	else
+        	return "        -";
+}
+
+proc_printdef procprt_SNETBW = 
+   { "   BANDWO", "SNETBW", procprt_SNETBW_a, procprt_SNETBW_e, 9};
+/***************************************************************/
+static void
+format_bandw(char *buf, count_t kbps)
+{
+	char        c;
+
+	if (kbps < 10000)
+	{
+                c='K';
+        }
+        else if (kbps < (count_t)10000 * 1000)
+        {
+                kbps/=1000;
+                c = 'M';
+        }
+        else if (kbps < (count_t)10000 * 1000 * 1000)
+        {
+                kbps/=1000 * 1000;
+                c = 'G';
+        }
+        else
+        {
+                kbps = kbps / 1000 / 1000 / 1000;
+                c = 'T';
+        }
+
+        sprintf(buf, "%4lld %cbps", kbps, c);
+}
 /***************************************************************/
 char *
 procprt_SORTITEM_ae(struct tstat *curstat, int avgval, int nsecs)
@@ -1738,23 +1826,3 @@ procprt_SORTITEM_ae(struct tstat *curstat, int avgval, int nsecs)
 
 proc_printdef procprt_SORTITEM = 
    { 0, "SORTITEM", procprt_SORTITEM_ae, procprt_SORTITEM_ae, 4 };
-/***************************************************************/
-char *
-procprt_SNET_a(struct tstat *curstat, int avgval, int nsecs)
-{
-        static char buf[10];
-        
-        val2valstr(curstat->net.tcpsnd + curstat->net.udpsnd + 
-                           curstat->net.rawsnd,  buf, 4, avgval, nsecs);
-
-        return buf;
-}
-
-char *
-procprt_SNET_e(struct tstat *curstat, int avgval, int nsecs)
-{
-        return "   -";
-}
-
-proc_printdef procprt_SNET = 
-   { "SNET", "SNET", procprt_SNET_a, procprt_SNET_e, 4 };

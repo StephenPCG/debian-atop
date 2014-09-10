@@ -375,7 +375,7 @@ print_CPL(char *hp, struct sstat *ss, struct tstat *ps, int nact)
 void
 print_MEM(char *hp, struct sstat *ss, struct tstat *ps, int nact)
 {
-	printf(	"%s %u %lld %lld %lld %lld %lld %lld\n",
+	printf(	"%s %u %lld %lld %lld %lld %lld %lld %lld\n",
 			hp,
 			pagesize,
 			ss->mem.physmem,
@@ -383,7 +383,8 @@ print_MEM(char *hp, struct sstat *ss, struct tstat *ps, int nact)
 			ss->mem.cachemem,
 			ss->mem.buffermem,
 			ss->mem.slabmem,
-			ss->mem.cachedrt);
+			ss->mem.cachedrt,
+			ss->mem.slabreclaim);
 }
 
 void
@@ -609,7 +610,7 @@ print_PRD(char *hp, struct sstat *ss, struct tstat *ps, int nact)
 				ps->gen.pid,
 				ps->gen.name,
 				ps->gen.state,
-				supportflags & PATCHSTAT ? 'y' : 'n',
+				'n',
 				supportflags & IOSTAT ? 'y' : 'n',
 				ps->dsk.rio, ps->dsk.rsz,
 				ps->dsk.wio, ps->dsk.wsz, ps->dsk.cwsz,
@@ -626,17 +627,17 @@ print_PRN(char *hp, struct sstat *ss, struct tstat *ps, int nact)
 	for (i=0; i < nact; i++, ps++)
 	{
 		printf("%s %d (%s) %c %c %lld %lld %lld %lld %lld %lld "
-		       "%lld %lld %lld %lld %d %c\n",
+		       "%lld %lld %d %d %d %c\n",
 				hp,
 				ps->gen.pid,
 				ps->gen.name,
 				ps->gen.state,
-				supportflags & PATCHSTAT ? 'y' : 'n',
+				supportflags & NETATOP ? 'y' : 'n',
 				ps->net.tcpsnd, ps->net.tcpssz,
 				ps->net.tcprcv, ps->net.tcprsz,
 				ps->net.udpsnd, ps->net.udpssz,
 				ps->net.udprcv, ps->net.udprsz,
-				ps->net.rawsnd, ps->net.rawrcv,
+				0,              0,
 				ps->gen.tgid,   ps->gen.isproc ? 'y':'n');
 	}
 }

@@ -207,7 +207,7 @@ deviatproc(struct tstat *aproc, int npresent,
 	struct tstat		prestat;
 	struct pinfo		*pinfo;
 	count_t			totusedcpu;
-	char			procsaved = 1;
+	char			procsaved = 1, hashtype = 'p';
 
 	/*
 	** needed for sanity check later on...
@@ -220,8 +220,8 @@ deviatproc(struct tstat *aproc, int npresent,
 
 	/*
 	** make new list of all tasks in the process-database;
-	** after handling all processes, the left-overs
-	** should have disappeared since the previous sample
+	** after handling all processes, the left-overs are processes
+	** that have disappeared since the previous sample
 	*/
 	pdb_makeresidue();
 
@@ -349,6 +349,16 @@ deviatproc(struct tstat *aproc, int npresent,
 	/*
 	** calculate deviations per exited process
 	*/
+	if (nexit > 0 && supportflags&NETATOPD)
+	{
+		if (eproc->gen.pid)
+			hashtype = 'p';
+		else
+			hashtype = 'b';
+
+		netatop_exithash(hashtype);
+	}
+
 	for (c=0; c < nexit; c++)
 	{
 		/*
@@ -394,6 +404,7 @@ deviatproc(struct tstat *aproc, int npresent,
 		** now do the calculations
 		*/
 		devstat = dproc+d;
+		memset(devstat, 0, sizeof *devstat);
 
 		devstat->gen        = curstat->gen;
 
@@ -405,81 +416,6 @@ deviatproc(struct tstat *aproc, int npresent,
 
 		strcpy(devstat->gen.cmdline, prestat.gen.cmdline);
 
-		devstat->cpu.nice     = 0;
-		devstat->cpu.prio     = 0;
-		devstat->cpu.rtprio   = 0;
-		devstat->cpu.policy   = 0;
-		devstat->cpu.curcpu   = 0;
-		devstat->cpu.sleepavg = 0;
-
-		if (supportflags & PATCHACCT)
-		{
-			devstat->net.tcpsnd = curstat->net.tcpsnd -
-			                      prestat.net.tcpsnd;
-			devstat->net.tcpssz = curstat->net.tcpssz -
-			                      prestat.net.tcpssz;
-			devstat->net.tcprcv = curstat->net.tcprcv -
-			                      prestat.net.tcprcv;
-			devstat->net.tcprsz = curstat->net.tcprsz -
-			                      prestat.net.tcprsz;
-			devstat->net.udpsnd = curstat->net.udpsnd -
-			                      prestat.net.udpsnd;
-			devstat->net.udpssz = curstat->net.udpssz -
-			                      prestat.net.udpssz;
-			devstat->net.udprcv = curstat->net.udprcv -
-			                      prestat.net.udprcv;
-			devstat->net.udprsz = curstat->net.udprsz -
-			                      prestat.net.udprsz;
-			devstat->net.rawsnd = curstat->net.rawsnd -
-			                      prestat.net.rawsnd;
-			devstat->net.rawrcv = curstat->net.rawrcv -
-			                      prestat.net.rawrcv;
-			devstat->dsk.rio    = curstat->dsk.rio    -
-			                      prestat.dsk.rio;
-			devstat->dsk.rsz    = curstat->dsk.rsz    -
-			                      prestat.dsk.rsz;
-			devstat->dsk.wio    = curstat->dsk.wio    -
-			                      prestat.dsk.wio;
-			devstat->dsk.wsz    = curstat->dsk.wsz    -
-			                      prestat.dsk.wsz;
-			devstat->dsk.cwsz   = curstat->dsk.cwsz    -
-			                      prestat.dsk.cwsz;
-			devstat->mem.vmem   = 0;
-			devstat->mem.rmem   = 0;
-			devstat->mem.vgrow  = -curstat->mem.vmem;
-			devstat->mem.rgrow  = -curstat->mem.rmem;
-		}
-		else
-		{
-			devstat->net.tcpsnd   = 0;
-			devstat->net.tcpssz   = 0;
-			devstat->net.tcprcv   = 0;
-			devstat->net.tcprsz   = 0;
-			devstat->net.udpsnd   = 0;
-			devstat->net.udpssz   = 0;
-			devstat->net.udprcv   = 0;
-			devstat->net.udprsz   = 0;
-			devstat->net.rawsnd   = 0;
-			devstat->net.rawrcv   = 0;
-			devstat->mem.vmem     = 0;
-			devstat->mem.rmem     = 0;
-			devstat->mem.vgrow    = 0;
-			devstat->mem.rgrow    = 0;
-			devstat->dsk.wio      = 0;
-			devstat->dsk.wsz      = 0;
-			devstat->dsk.cwsz     = 0;
-			devstat->dsk.rsz      = 0;
-			devstat->dsk.rio      = curstat->dsk.rio  -
-						prestat.dsk.rio   -
-						prestat.dsk.wio;
-		}
-
-		devstat->cpu.stime  = curstat->cpu.stime  - prestat.cpu.stime;
-		devstat->cpu.utime  = curstat->cpu.utime  - prestat.cpu.utime;
-		devstat->mem.minflt = curstat->mem.minflt - prestat.mem.minflt;
-		devstat->mem.majflt = curstat->mem.majflt - prestat.mem.majflt;
-		devstat->mem.vexec  = 0;
-
 		/*
 		** due to the strange exponent-type storage of values
 		** in the process accounting record, the resource-value
@@ -487,39 +423,37 @@ deviatproc(struct tstat *aproc, int npresent,
 		** stored value of the last registered sample; in that
 		** case the deviation should be set to zero
 		*/
-		if (devstat->cpu.stime < 0)
-			devstat->cpu.stime = 0;
-		if (devstat->cpu.utime < 0)
-			devstat->cpu.utime = 0;
-		if (devstat->dsk.rio    < 0)
-			devstat->dsk.rio   = 0;
-		if (devstat->dsk.rsz    < 0)
-			devstat->dsk.rsz   = 0;
-		if (devstat->dsk.wio    < 0)
-			devstat->dsk.wio   = 0;
-		if (devstat->dsk.wsz    < 0)
-			devstat->dsk.wsz   = 0;
-		if (devstat->dsk.cwsz    < 0)
-			devstat->dsk.cwsz   = 0;
-		if (devstat->mem.minflt < 0)
-			devstat->mem.minflt = 0;
-		if (devstat->mem.majflt < 0)
-			devstat->mem.majflt = 0;
+		if (curstat->cpu.stime > prestat.cpu.stime)
+			devstat->cpu.stime  = curstat->cpu.stime -
+			                      prestat.cpu.stime;
 
-		if (supportflags & PATCHACCT)
+		if (curstat->cpu.utime > prestat.cpu.utime)
+			devstat->cpu.utime  = curstat->cpu.utime -
+			                      prestat.cpu.utime;
+
+		if (curstat->mem.minflt > prestat.mem.minflt)
+			devstat->mem.minflt = curstat->mem.minflt - 
+			                      prestat.mem.minflt;
+
+		if (curstat->mem.majflt > prestat.mem.majflt)
+			devstat->mem.majflt = curstat->mem.majflt -
+			                      prestat.mem.majflt;
+
+		if (curstat->dsk.rio > (prestat.dsk.rio + prestat.dsk.wio))
+			devstat->dsk.rio    = curstat->dsk.rio  -
+			                      prestat.dsk.rio   -
+			                      prestat.dsk.wio;
+
+		/*
+		** try to match the network counters of netatop
+		*/
+		if (supportflags & NETATOPD)
 		{
-			if (devstat->net.tcpsnd < 0)
-				 devstat->net.tcpsnd = 0;
-			if (devstat->net.tcprcv < 0)
-				 devstat->net.tcprcv = 0;
-			if (devstat->net.udpsnd < 0)
-				 devstat->net.udpsnd = 0;
-			if (devstat->net.udprcv < 0)
-				 devstat->net.udprcv = 0;
-			if (devstat->net.rawsnd < 0)
-				 devstat->net.rawsnd = 0;
-			if (devstat->net.rawrcv < 0)
-				 devstat->net.rawrcv = 0;
+			unsigned long	val = (hashtype == 'p' ?
+						curstat->gen.pid :
+						curstat->gen.btime);
+
+			netatop_exitfind(val, devstat, &prestat);
 		}
 
 		d++;
@@ -603,26 +537,57 @@ calcdiff(struct tstat *devstat, struct tstat *curstat, struct tstat *prestat,
 	devstat->mem.majflt =
 		subcount(curstat->mem.majflt, prestat->mem.majflt);
 
-	devstat->net.tcpsnd =
-		subcount(curstat->net.tcpsnd, prestat->net.tcpsnd);
-	devstat->net.tcpssz =
-		subcount(curstat->net.tcpssz, prestat->net.tcpssz);
-	devstat->net.tcprcv =
-		subcount(curstat->net.tcprcv, prestat->net.tcprcv);
-	devstat->net.tcprsz =
-		subcount(curstat->net.tcprsz, prestat->net.tcprsz);
-	devstat->net.udpsnd =
-		subcount(curstat->net.udpsnd, prestat->net.udpsnd);
-	devstat->net.udpssz =
-		subcount(curstat->net.udpssz, prestat->net.udpssz);
-	devstat->net.udprcv =
-		subcount(curstat->net.udprcv, prestat->net.udprcv);
-	devstat->net.udprsz =
-		subcount(curstat->net.udprsz, prestat->net.udprsz);
-	devstat->net.rawsnd =
-		subcount(curstat->net.rawsnd, prestat->net.rawsnd);
-	devstat->net.rawrcv =
-		subcount(curstat->net.rawrcv, prestat->net.rawrcv);
+	/*
+ 	** network counters: due to an unload/load of the netatop module,
+	** previous counters might be larger than the current
+	*/
+	if (curstat->net.tcpsnd >= prestat->net.tcpsnd)
+		devstat->net.tcpsnd =
+			subcount(curstat->net.tcpsnd, prestat->net.tcpsnd);
+	else
+		devstat->net.tcpsnd = curstat->net.tcpsnd;
+
+	if (curstat->net.tcpssz >= prestat->net.tcpssz)
+		devstat->net.tcpssz =
+			subcount(curstat->net.tcpssz, prestat->net.tcpssz);
+	else
+		devstat->net.tcpssz = curstat->net.tcpssz;
+
+	if (curstat->net.tcprcv >= prestat->net.tcprcv)
+		devstat->net.tcprcv =
+			subcount(curstat->net.tcprcv, prestat->net.tcprcv);
+	else
+		devstat->net.tcprcv = curstat->net.tcprcv;
+
+	if (curstat->net.tcprsz >= prestat->net.tcprsz)
+		devstat->net.tcprsz =
+			subcount(curstat->net.tcprsz, prestat->net.tcprsz);
+	else
+		devstat->net.tcprsz = curstat->net.tcprsz;
+
+	if (curstat->net.udpsnd >= prestat->net.udpsnd)
+		devstat->net.udpsnd =
+			subcount(curstat->net.udpsnd, prestat->net.udpsnd);
+	else
+		devstat->net.udpsnd = curstat->net.udpsnd;
+
+	if (curstat->net.udpssz >= prestat->net.udpssz)
+		devstat->net.udpssz =
+			subcount(curstat->net.udpssz, prestat->net.udpssz);
+	else
+		devstat->net.udpssz = curstat->net.udpssz;
+
+	if (curstat->net.udprcv >= prestat->net.udprcv)
+		devstat->net.udprcv =
+			subcount(curstat->net.udprcv, prestat->net.udprcv);
+	else
+		devstat->net.udprcv = curstat->net.udprcv;
+
+	if (curstat->net.udprsz >= prestat->net.udprsz)
+		devstat->net.udprsz =
+			subcount(curstat->net.udprsz, prestat->net.udprsz);
+	else
+		devstat->net.udprsz = curstat->net.udprsz;
 }
 
 /*
@@ -698,12 +663,17 @@ deviatsyst(struct sstat *cur, struct sstat *pre, struct sstat *dev)
 	dev->mem.freemem	= cur->mem.freemem;
 	dev->mem.buffermem	= cur->mem.buffermem;
 	dev->mem.slabmem	= cur->mem.slabmem;
+	dev->mem.slabreclaim	= cur->mem.slabreclaim;
 	dev->mem.committed	= cur->mem.committed;
 	dev->mem.commitlim	= cur->mem.commitlim;
 	dev->mem.cachemem	= cur->mem.cachemem;
 	dev->mem.cachedrt	= cur->mem.cachedrt;
 	dev->mem.totswap	= cur->mem.totswap;
 	dev->mem.freeswap	= cur->mem.freeswap;
+
+	dev->mem.shmem		= cur->mem.shmem;
+	dev->mem.shmrss		= cur->mem.shmrss;
+	dev->mem.shmswp		= cur->mem.shmswp;
 
 	dev->mem.swouts		= subcount(cur->mem.swouts,  pre->mem.swouts);
 	dev->mem.swins		= subcount(cur->mem.swins,   pre->mem.swins);
@@ -1150,12 +1120,17 @@ totalsyst(char category, struct sstat *new, struct sstat *tot)
 		tot->mem.freemem	 = new->mem.freemem;
 		tot->mem.buffermem	 = new->mem.buffermem;
 		tot->mem.slabmem	 = new->mem.slabmem;
+		tot->mem.slabreclaim	 = new->mem.slabreclaim;
 		tot->mem.committed	 = new->mem.committed;
 		tot->mem.commitlim	 = new->mem.commitlim;
 		tot->mem.cachemem	 = new->mem.cachemem;
 		tot->mem.cachedrt	 = new->mem.cachedrt;
 		tot->mem.totswap	 = new->mem.totswap;
 		tot->mem.freeswap	 = new->mem.freeswap;
+
+		tot->mem.shmem		 = new->mem.shmem;
+		tot->mem.shmrss		 = new->mem.shmrss;
+		tot->mem.shmswp		 = new->mem.shmswp;
 
 		tot->mem.swouts		+= new->mem.swouts;
 		tot->mem.swins		+= new->mem.swins;

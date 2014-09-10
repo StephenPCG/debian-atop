@@ -27,7 +27,6 @@
 ** along with this program; if not, write to the Free Software
 ** Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
 ** --------------------------------------------------------------------------
-**
 */
 
 static const char rcsid[] = "$Id: atopsar.c,v 1.28 2010/11/26 06:19:43 gerlof Exp $";
@@ -365,8 +364,8 @@ atopsar(int argc, char *argv[])
 	** during heavy CPU load);
 	** ignored if not running under superuser privileges!
 	*/
-	(void) nice(-20);
-
+	if ( nice(-20) == -1)
+		;
 	/*
 	** determine properties (like speed) of all interfaces
 	*/
@@ -2149,7 +2148,7 @@ topdline(struct sstat *ss, struct tstat *ts, struct tstat **ps, int nactproc,
 		return 0;
 	}
 
-	if ( !(supportflags & (PATCHSTAT | IOSTAT)) )
+	if ( !(supportflags & IOSTAT) )
 	{
 		printf("no per-process disk counters available.....\n");
 		return 0;
@@ -2208,7 +2207,7 @@ topnline(struct sstat *ss, struct tstat *ts, struct tstat **ps, int nactproc,
 		return 0;
 	}
 
-	if ( !(supportflags & PATCHSTAT))
+	if ( !(supportflags & NETATOP) )
 	{
 		printf("no per-process network counters available.....\n");
 		return 0;
@@ -2219,9 +2218,8 @@ topnline(struct sstat *ss, struct tstat *ts, struct tstat **ps, int nactproc,
 	*/
 	for (i=0, availnet=0; i < nactproc; i++)
 	{
-		availnet += (*ps+i)->net.tcpsnd + (*ps+i)->net.tcprcv +
-		            (*ps+i)->net.udpsnd + (*ps+i)->net.udprcv +
-		            (*ps+i)->net.rawsnd + (*ps+i)->net.rawrcv;
+		availnet += (*(ps+i))->net.tcpssz + (*(ps+i))->net.tcprsz +
+		            (*(ps+i))->net.udpssz + (*(ps+i))->net.udprsz;
 	}
 
 	if (availnet == 0)
@@ -2230,26 +2228,22 @@ topnline(struct sstat *ss, struct tstat *ts, struct tstat **ps, int nactproc,
 	/*
 	** sort process list in network order
 	*/
-	qsort(*ps, nactproc, sizeof(struct tstat *), compnet);
+	qsort(ps, nactproc, sizeof(struct tstat *), compnet);
 
 	printf("%5d %-8.8s %3.0lf%% | %5d %-8.8s %3.0lf%% | "
 	       "%5d %-8.8s %3.0lf%%\n",
 		(ps[0])->gen.pid, (ps[0])->gen.name,
-		(double)((ps[0])->net.tcpsnd + (ps[0])->net.tcprcv +
-		         (ps[0])->net.udpsnd + (ps[0])->net.udprcv +
-		         (ps[0])->net.rawsnd + (ps[0])->net.rawrcv)
+		(double)((ps[0])->net.tcpssz + (ps[0])->net.tcprsz +
+		         (ps[0])->net.udpssz + (ps[0])->net.udprsz  )
 							* 100.0 / availnet,
 		(ps[1])->gen.pid, (ps[1])->gen.name,
-		(double)((ps[1])->net.tcpsnd + (ps[1])->net.tcprcv +
-		         (ps[1])->net.udpsnd + (ps[1])->net.udprcv +
-		         (ps[1])->net.rawsnd + (ps[1])->net.rawrcv)
+		(double)((ps[1])->net.tcpssz + (ps[1])->net.tcprsz +
+		         (ps[1])->net.udpssz + (ps[1])->net.udprsz  )
 							* 100.0 / availnet,
 		(ps[2])->gen.pid, (ps[2])->gen.name,
-		(double)((ps[2])->net.tcpsnd + (ps[2])->net.tcprcv +
-		         (ps[2])->net.udpsnd + (ps[2])->net.udprcv +
-		         (ps[2])->net.rawsnd + (ps[2])->net.rawrcv)
+		(double)((ps[2])->net.tcpssz + (ps[2])->net.tcprsz +
+		         (ps[2])->net.udpssz + (ps[2])->net.udprsz  )
 							* 100.0 / availnet);
-
 	return 1;
 }
 

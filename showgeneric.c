@@ -824,7 +824,7 @@ generic_samp(time_t curtime, int nsecs,
                         }
 
 			priphead(firstproc/plistsz+1, (nlist-1)/plistsz+1,
-			       		showtype, curorder,
+			       		&showtype, &curorder,
 					showorder == MSORTAUTO ? 1 : 0);
 
 			if (screen)
@@ -1007,7 +1007,7 @@ generic_samp(time_t curtime, int nsecs,
 			   ** sort in disk-activity order
 			   */
 			   case MSORTDSK:
-				if ( !(supportflags & (PATCHSTAT|IOSTAT)) )
+				if ( !(supportflags & IOSTAT) )
 				{
 					statmsg = "No disk-activity figures "
 					          "available; request ignored!";
@@ -1021,9 +1021,10 @@ generic_samp(time_t curtime, int nsecs,
 			   ** sort in network-activity order
 			   */
 			   case MSORTNET:
-				if ( !(supportflags & PATCHSTAT) )
+				if ( !(supportflags & NETATOP) )
 				{
-					statmsg = "No kernel-patch installed; "
+					statmsg = "Kernel module 'netatop' not "
+					          "active or no root privs; "
 					          "request ignored!";
 					break;
 				}
@@ -1059,7 +1060,7 @@ generic_samp(time_t curtime, int nsecs,
 			   ** disk-specific figures per process
 			   */
 			   case MPROCDSK:
-				if ( !(supportflags & (PATCHSTAT|IOSTAT)) )
+				if ( !(supportflags & IOSTAT) )
 				{
 					statmsg = "No disk-activity figures "
 					          "available; request ignored!";
@@ -1078,9 +1079,10 @@ generic_samp(time_t curtime, int nsecs,
 			   ** network-specific figures per process
 			   */
 			   case MPROCNET:
-				if ( !(supportflags & PATCHSTAT) )
+				if ( !(supportflags & NETATOP) )
 				{
-					statmsg = "No kernel-patch installed; "
+					statmsg = "Kernel module 'netatop' not "
+					          "active or no root privs; "
 					          "request ignored!";
 					break;
 				}
@@ -1796,6 +1798,7 @@ static int
 cumusers(struct tstat **curprocs, struct tstat *curusers, int numprocs)
 {
 	register int	i, numusers;
+	count_t		nett_wsz;
 
 	/*
 	** sort list of active processes in order of uid (increasing)
@@ -1827,18 +1830,26 @@ cumusers(struct tstat **curprocs, struct tstat *curusers, int numprocs)
 		curusers->cpu.utime  += (*curprocs)->cpu.utime;
 		curusers->cpu.stime  += (*curprocs)->cpu.stime;
 
-		curusers->dsk.rsz    += (*curprocs)->dsk.rsz;
-		curusers->dsk.wsz    += (*curprocs)->dsk.wsz;
-			
-		curusers->dsk.rio    += (*curprocs)->dsk.rio;
-		curusers->dsk.wio    += (*curprocs)->dsk.wio;
-			
+ 		if ((*curprocs)->dsk.wsz > (*curprocs)->dsk.cwsz)
+                	nett_wsz = (*curprocs)->dsk.wsz -(*curprocs)->dsk.cwsz;
+		else
+			nett_wsz = 0;
+
+		curusers->dsk.rio    += (*curprocs)->dsk.rsz;
+		curusers->dsk.wio    += nett_wsz;
+
+		curusers->dsk.rsz    += curusers->dsk.rio;
+		curusers->dsk.wsz    +=	curusers->dsk.wio;
+
 		curusers->net.tcpsnd += (*curprocs)->net.tcpsnd;
 		curusers->net.tcprcv += (*curprocs)->net.tcprcv;
 		curusers->net.udpsnd += (*curprocs)->net.udpsnd;
 		curusers->net.udprcv += (*curprocs)->net.udprcv;
-		curusers->net.rawsnd += (*curprocs)->net.rawsnd;
-		curusers->net.rawrcv += (*curprocs)->net.rawrcv;
+
+		curusers->net.tcpssz += (*curprocs)->net.tcpssz;
+		curusers->net.tcprsz += (*curprocs)->net.tcprsz;
+		curusers->net.udpssz += (*curprocs)->net.udpssz;
+		curusers->net.udprsz += (*curprocs)->net.udprsz;
 
 		if ((*curprocs)->gen.state != 'E')
 		{
@@ -1867,6 +1878,7 @@ static int
 cumprocs(struct tstat **curprocs, struct tstat *curprogs, int numprocs)
 {
 	register int	i, numprogs;
+	count_t		nett_wsz;
 
 	/*
 	** sort list of active processes in order of process-name
@@ -1898,18 +1910,26 @@ cumprocs(struct tstat **curprocs, struct tstat *curprogs, int numprocs)
 		curprogs->cpu.utime  += (*curprocs)->cpu.utime;
 		curprogs->cpu.stime  += (*curprocs)->cpu.stime;
 
-		curprogs->dsk.rio    += (*curprocs)->dsk.rio;
-		curprogs->dsk.wio    += (*curprocs)->dsk.wio;
+ 		if ((*curprocs)->dsk.wsz > (*curprocs)->dsk.cwsz)
+                	nett_wsz = (*curprocs)->dsk.wsz -(*curprocs)->dsk.cwsz;
+		else
+			nett_wsz = 0;
+
+		curprogs->dsk.rio    += (*curprocs)->dsk.rsz;
+		curprogs->dsk.wio    += nett_wsz;
 			
-		curprogs->dsk.rsz    += (*curprocs)->dsk.rsz;
-		curprogs->dsk.wsz    += (*curprocs)->dsk.wsz;
+		curprogs->dsk.rsz    += curprogs->dsk.rio;
+		curprogs->dsk.wsz    +=	curprogs->dsk.wio;
 			
 		curprogs->net.tcpsnd += (*curprocs)->net.tcpsnd;
 		curprogs->net.tcprcv += (*curprocs)->net.tcprcv;
 		curprogs->net.udpsnd += (*curprocs)->net.udpsnd;
 		curprogs->net.udprcv += (*curprocs)->net.udprcv;
-		curprogs->net.rawsnd += (*curprocs)->net.rawsnd;
-		curprogs->net.rawrcv += (*curprocs)->net.rawrcv;
+
+		curprogs->net.tcpssz += (*curprocs)->net.tcpssz;
+		curprogs->net.tcprsz += (*curprocs)->net.tcprsz;
+		curprogs->net.udpssz += (*curprocs)->net.udpssz;
+		curprogs->net.udprsz += (*curprocs)->net.udprsz;
 
 		if ((*curprocs)->gen.state != 'E')
 		{
@@ -2094,7 +2114,7 @@ generic_init(void)
 			break;
 
 		   case MPROCDSK:
-			if ( !(supportflags & (PATCHSTAT|IOSTAT)) )
+			if ( !(supportflags & IOSTAT) )
 			{
 				fprintf(stderr,
 					"No disk-activity figures "
@@ -2108,11 +2128,10 @@ generic_init(void)
 			break;
 
 		   case MPROCNET:
-			if ( !(supportflags & PATCHSTAT) )
+			if ( !(supportflags & NETATOP) )
 			{
-				fprintf(stderr,
-					"No kernel-patch installed "
-					"(no network-statistics)\n");
+				fprintf(stderr, "Kernel module 'netatop' not "
+					          "active; request ignored!");
 				sleep(3);
 				break;
 			}
